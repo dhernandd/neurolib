@@ -1,0 +1,4 @@
+#!/bin/bash
+for filename in ./neurolib/tests/builders/*.py; do
+    python $filename
+done
