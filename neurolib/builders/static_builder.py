@@ -13,7 +13,6 @@
 # limitations under the License.
 #
 # ==============================================================================
-import pydot
 import tensorflow as tf
 
 from neurolib.builders.builder import Builder
@@ -22,7 +21,7 @@ from neurolib.encoder.anode import ANode
 from neurolib.encoder.custom import CustomNode
 from neurolib.encoder.input import PlaceholderInputNode  # @UnusedImport
 from neurolib.encoder.output import OutputNode
-from neurolib.utils.utils import check_name, basic_concatenation
+from neurolib.utils.utils import check_name
 from neurolib.encoder.basic import CopyNode
 
 # pylint: disable=bad-indentation, no-member, protected-access

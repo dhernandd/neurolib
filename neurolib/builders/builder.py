@@ -15,8 +15,6 @@
 # ==============================================================================
 import abc
 
-import pydot
-
 from neurolib.encoder.deterministic import DeterministicNNNode #@UnusedImport
 from neurolib.utils.utils import check_name
 
@@ -54,9 +52,6 @@ class Builder(abc.ABC):
     self.input_nodes = {}
     self.output_nodes = {}
     self._label_to_node = {}
-
-    # The graph of the model
-    self.model_graph = pydot.Dot(graph_type='digraph')
 
   @check_name
   def addInner(self,
