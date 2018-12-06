@@ -23,7 +23,6 @@ from neurolib.trainer.trainer import Trainer
 from neurolib.trainer.costs import mse, mabsdiff
 from neurolib.utils.graphs import get_session
 
-RSLT_DIR = 'neurolib/rslts/'
 # pylint: disable=bad-indentation, no-member, protected-access
 
 def make_data_iterator(data, batch_size=1, shuffle=True):
@@ -42,6 +41,7 @@ def make_data_iterator(data, batch_size=1, shuffle=True):
             
 class GDTrainer(Trainer):
   """
+  A Trainer that learns parameter by applying simple Gradient Descent to a cost function.
   """
   summaries_dict = {'mse' : mse,
                     'mabsdiff' : mabsdiff}
@@ -56,6 +56,7 @@ class GDTrainer(Trainer):
                name='test',
                batch_size=1,
                save=False,
+               rslt_dir=None,
                **dirs):
     """
     Initialize a GDTrainer
@@ -66,6 +67,7 @@ class GDTrainer(Trainer):
     self.cost = cost
     self.cost_name = cost[0]
     self.cost_inputs = cost[1]
+    self.rslt_dir = rslt_dir
     self._update_default_directives(**dirs)
     
     self._define_train_op()
@@ -111,7 +113,6 @@ class GDTrainer(Trainer):
     self.train_op = opt.apply_gradients(gradsvars, global_step=self.train_step,
                                         name='train_op')
     
-#   def update(self, sess, epoch, keys_and_data, batch_size=1):
   def update(self, sess, dataset, batch_size):
     """
     Perform a single gradient descent update for the variables in this cost.
@@ -159,9 +160,6 @@ class GDTrainer(Trainer):
       if 'summaries' in self.directives and self.save:
         summaries = sess.run(merged_summaries,
                              feed_dict=train_dataset)
-#         summaries = self.reduce_op_from_batches(sess,
-#                                                 merged_summaries,
-#                                                 train_dataset)
         self.writer.add_summary(summaries, ep)
       
       # Save on validation improvement
@@ -172,11 +170,11 @@ class GDTrainer(Trainer):
         if new_cvalid < cvalid:
           cvalid = new_cvalid
           print('Valid. cost:', cvalid, '... Saving...')
-          rlt_dir = RSLT_DIR + self.name + '/'+ addDateTime() + '/'
+          rlt_dir = self.rslt_dir + self.name + '/'+ addDateTime() + '/'
           if not os.path.exists(rlt_dir):
             os.makedirs(rlt_dir)
           self.saver.save(sess,
-                          rlt_dir + self.name,
+                          rlt_dir,
                           global_step=self.train_step)
     sess.close()
   

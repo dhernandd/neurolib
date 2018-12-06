@@ -15,6 +15,8 @@
 # ==============================================================================
 import tensorflow as tf
 
+# pylint: disable=bad-indentation, no-member, protected-access
+
 def get_session():
   """
   This is a handling similar to that of edward.
