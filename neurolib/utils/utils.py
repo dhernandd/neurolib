@@ -13,6 +13,8 @@
 # limitations under the License.
 #
 # ==============================================================================
+import datetime
+
 import numpy as np
 import tensorflow as tf
 
@@ -74,3 +76,15 @@ def basic_concatenation(_input):
     _input = tf.concat(itensors, axis=-1)
   
   return _input
+
+def addDateTime(s = ""):
+    """
+    Adds the current date and time at the end of a string.
+    Inputs:
+        s -> string
+    Output:
+        S = s_Dyymmdd_HHMM
+    """
+    date = str(datetime.datetime.now())
+    date = date[2:4] + date[5:7] + date[8:10] + '_' + date[11:13] + date[14:16]
+    return s + '_D' + date

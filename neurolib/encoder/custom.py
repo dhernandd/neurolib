@@ -159,7 +159,6 @@ class CustomNode(InnerNode):
     if not self._is_built:
       raise ValueError("Node is not built")
     
-    print("in custom", inputs)
     num_outputs = self.num_expected_outputs
     rslt, rslt_dict = self.in_builder.get_output(inputs, islot_to_itensor, self, name)
     for i in range(num_outputs):

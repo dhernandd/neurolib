@@ -53,11 +53,11 @@ class EvolutionSequence(InnerNode):
     self.main_oshapes = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes[0]
     
-    self.free_oslots = list(range(self.num_expected_outputs))
-
-    self.builder = builder
-    self.mode = mode
     self.num_expected_inputs = num_inputs
+    self.free_oslots = list(range(self.num_expected_outputs))
+    self.free_islots = list(range(self.num_expected_inputs))
+
+    self.mode = mode
     
   @abstractmethod
   def _build(self):
@@ -164,7 +164,7 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
     
     self._is_built = True
 
-  def __call__(self):
+  def __call__(self, inputs=None, islot_to_itensor=None):
     """
     """
     raise NotImplementedError("")
@@ -186,12 +186,10 @@ class LSTMEvolutionSequence(EvolutionSequence):
     """
     super(LSTMEvolutionSequence, self).__init__(builder,
                                                 state_sizes,
-#                                                 init_states=init_states,
                                                 num_inputs=num_inputs,
                                                 name=name,
                                                 mode=mode)
     
-#     self.init_inode, self.init_hidden_state = init_states[0], init_states[1]
     self.cell_class = cell_class = (cell_dict[cell_class] if isinstance(cell_class, str) 
                                     else cell_class) 
     self.num_units = self.main_output_sizes[0][0]
@@ -274,7 +272,7 @@ class LSTMEvolutionSequence(EvolutionSequence):
     
     self._is_built = True
 
-  def __call__(self):
+  def __call__(self, inputs=None, islot_to_itensor=None):
     """
     """
     raise NotImplementedError("")
@@ -346,7 +344,7 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
     
     self._is_built = True
     
-  def __call__(self):
+  def __call__(self,  inputs=None, islot_to_itensor=None):
     """
     """
     raise NotImplementedError("")

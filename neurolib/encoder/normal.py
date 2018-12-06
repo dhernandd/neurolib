@@ -102,7 +102,6 @@ class NormalTriLNode(InnerNode):
 #     main_oshape = self._oslot_to_shape[0]
     main_oshape = self.main_output_sizes[0]
     osize = main_oshape[0]
-    print("main_oshape", main_oshape)
     
     # Mean oslot
     self._oslot_to_shape[1] = main_oshape
@@ -114,8 +113,6 @@ class NormalTriLNode(InnerNode):
     o2 = self.builder.addOutput(name=self.directives['output_cholesky_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
     
-    print('_oslot_to_shape', self._oslot_to_shape)
-
   def _get_mean(self, _input, scope_suffix=None):
     """
     Get the mean of the distribution.
@@ -169,7 +166,6 @@ class NormalTriLNode(InnerNode):
       if dirs['share_params']:
         output_chol = fully_connected(hid_layer, output_dim**2, activation_fn=None)
       else:
-        print("_input:", _input)
         hid_layer = fully_connected(_input, num_nodes, activation_fn=activation,
             biases_initializer=tf.random_normal_initializer(stddev=1/np.sqrt(num_nodes)))
         for _ in range(num_layers-1):

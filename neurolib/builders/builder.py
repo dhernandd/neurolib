@@ -65,9 +65,19 @@ class Builder(abc.ABC):
     Add an InnerNode to the Encoder Graph
     
     Args:
-      *main_params (list): List of mandatory params for the InnerNode
-      node_class (InnerNode): class of the node
+      state_sizes (int or list of list of int) : For a single output, the
+          dimension of the output. For more than one output, a list of list of
+          ints where `state_sizes[ot]` are the dimensions of the output
+          corresponding to the oslot `ot`.
+      
+      num_inputs (int) : The number of inputs to this node.
+      
+      node_class (InnerNode or str): class of the node
+      
+      is_sequence (bool) : Does this node represent a sequence?
+      
       name (str): A unique string identifier for the node being added to the MG
+      
       dirs (dict): A dictionary of directives for the node
     """
     if isinstance(node_class, str):

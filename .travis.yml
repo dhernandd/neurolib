@@ -4,5 +4,5 @@ python:
 install:
   - pip install --upgrade tensorflow tensorflow-probability bidict
 script:
-  - python -m unittest discover './neurolib/tests/builders/'
+  - python -m unittest discover './neurolib/tests/'
 

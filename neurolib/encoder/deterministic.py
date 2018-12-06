@@ -84,7 +84,7 @@ class DeterministicNNNode(InnerNode):
     """
     Update the node directives
     """
-    self.directives = {'num_layers' : 1,
+    self.directives = {'num_layers' : 2,
                        'num_nodes' : 128,
                        'activation' : 'relu',
                        'net_grow_rate' : 1.0}
@@ -93,7 +93,6 @@ class DeterministicNNNode(InnerNode):
   def _get_output(self, inputs=None, islot_to_itensor=None):
     """
     """
-    print("inputs", inputs)
     if inputs is not None:
       _input = inputs
     elif islot_to_itensor is not None:
@@ -138,7 +137,6 @@ class DeterministicNNNode(InnerNode):
 #     _input = tf.concat(itensors, axis=-1)
 #     output_dim = self._oslot_to_shape[0][-1]
     output_dim = self.main_output_sizes[0][0]
-    print("_input", _input)
     if num_layers == 1:
       output = layers[0](_input, output_dim, activation_fn=activations[0])
     else:

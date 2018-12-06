@@ -129,7 +129,6 @@ class PlaceholderInputNode(InputNode):
                                                state_sizes,
                                                is_sequence=is_sequence)
 
-    print("name", name)
     self.name = name or "In_" + str(self.label)
 
     self.free_oslots = list(range(self.num_expected_outputs))
@@ -277,7 +276,7 @@ class NormalInputNode(InputNode):
      
     Assign the mean from self.dist to _oslot_to_otensor[1]
     
-    Assign the cholesky decomposition of the covariance from self.dist to
+    Assign the Cholesky decomposition of the covariance from self.dist to
     _oslot_to_otensor[2]
     """
     mean = self.directives['mean_init']
