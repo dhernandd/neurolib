@@ -24,8 +24,8 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 1
-test_to_run = 1
+NUM_TESTS = 2
+test_to_run = list(range(NUM_TESTS))
         
 def generate_some_data():
   """
@@ -49,7 +49,7 @@ class VAETestCustTrain(tf.test.TestCase):
     """
     tf.reset_default_graph()
 
-  @unittest.skipIf(test_to_run == 1, "Skipping") 
+  @unittest.skipIf(test_to_run == 0, "Skipping") 
   def test_train1(self):
     """
     """
@@ -81,7 +81,7 @@ class VAETestCustTrain(tf.test.TestCase):
     vae.build()
     vae.train(dataset, num_epochs=20)
 
-  @unittest.skipIf(test_to_run == 2, "Skipping")
+  @unittest.skipIf(test_to_run == 1, "Skipping")
   def test_train_custom_node2(self):
     """
     Test commit
