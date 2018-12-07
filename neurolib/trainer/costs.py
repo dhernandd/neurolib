@@ -73,17 +73,17 @@ def mse_reg(node_dict):
   """
   pass
 
-def elbo(node_dict):
+def elbo(node_dict, node_names):
   """
   """
   try:
-    node_rec = node_dict['Recognition']
-    node_gen = node_dict['Generative']
+    node_gen = node_dict[node_names[0]]
+    node_rec = node_dict[node_names[1]]
   except AttributeError:
     raise AttributeError("You must define two InnerNodes, named 'Recognition' and "
                          "'Generative', for 'elbo' training")
     
-  nodeY = node_dict['response']
+  nodeY = node_dict['observation']
   
   Y = nodeY.get_outputs()[0]
   rec_dist = node_rec.dist

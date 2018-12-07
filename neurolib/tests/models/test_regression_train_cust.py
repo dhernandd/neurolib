@@ -108,7 +108,7 @@ class RegressionTestTrainCust(tf.test.TestCase):
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
   def test_train_custom_node2(self):
     """
-    Test commit
+    Test a custom Regression model with a CustomNode
     """
     print("Test 2: with CustomNode\n")
     dataset = generate_some_data()

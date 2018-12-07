@@ -287,7 +287,8 @@ class StaticBuilder(Builder):
                       num_outputs,
                       is_sequence=is_sequence,
                       name=name)
-    self.custom_encoders[name] = self.nodes[cust.label] = cust
+    name = cust.name
+    self.custom_encoders[name] = self.nodes[name] = cust
     self._label_to_node[cust.label] = cust
     
     return cust
