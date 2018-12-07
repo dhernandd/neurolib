@@ -95,18 +95,19 @@ class VAETestCustTrain(tf.test.TestCase):
                 'activation' : 'leaky_relu',
                 'net_grow_rate' : 1.0 }
     
-    input_dim = 2
+    input_dim = 10
     in0 = builder.addInput(input_dim, name='observation')
     
+    # Define Custom Recognition Model
     cust_rec = builder.createCustomNode(1, 1, name="Recognition")
     cust_rinn1 = cust_rec.addInner(3,
                                    node_class=NormalTriLNode,
                                    directives=enc_dirs)
-#     cust_rec.addDirectedLink(cust_rinn1, cust_rinn2)
     cust_rec.declareIslot(islot=0, innernode_name=cust_rinn1, inode_islot=0)
     cust_rec.declareOslot(oslot=0, innernode_name=cust_rinn1, inode_oslot=0)
     cust_rec.commit()
     
+    # Define Custom Generative Model
     cust_gen = builder.createCustomNode(1, 1, name="Generative")
     cust_ginn1 = cust_gen.addInner(16, directives=enc_dirs)
     cust_ginn2 = cust_gen.addInner(10,
@@ -119,10 +120,12 @@ class VAETestCustTrain(tf.test.TestCase):
     
     out0 = builder.addOutput(name='prediction')
     
+    # Link all of it
     builder.addDirectedLink(in0, cust_rec)
     builder.addDirectedLink(cust_rec, cust_gen)
     builder.addDirectedLink(cust_gen, out0)
 
+    # Define VAE and train
     vae = VariationalAutoEncoder(builder=builder)
     vae.build()
     vae.train(dataset, num_epochs=20)
