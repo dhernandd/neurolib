@@ -69,12 +69,11 @@ class CustomNode(InnerNode):
     self.num_expected_outputs = num_outputs
 
     self.in_builder = in_builder
+    self.nodes = in_builder.nodes
     self.name = 'Cust_' + str(self.label) if name is None else name
 
     self._innernode_to_its_avlble_islots = {}
     self._innernode_to_its_avlble_oslots = {}
-#     self._islot_to_inner_node_islot = {}
-#     self._oslot_to_inner_node_oslot = {}
     self._islot_to_inner_node_islot = bidict()
     self._oslot_to_inner_node_oslot = bidict()
     
@@ -128,11 +127,7 @@ class CustomNode(InnerNode):
     node = self.in_builder.nodes[node_name]
     
     # Assumes fixed number of expected_inputs
-#     self._innernode_to_its_avlble_islots[node_name] = list(
-#                                     range(node.num_expected_inputs))
     self._innernode_to_its_avlble_islots[node_name] = node.free_islots
-#     self._innernode_to_its_avlble_oslots[node_name] = list(
-#                                     range(node.num_expected_outputs))
     self._innernode_to_its_avlble_oslots[node_name] = node.free_oslots
     
     return node.name
@@ -151,6 +146,23 @@ class CustomNode(InnerNode):
     # Remove the connected islot and oslot from the lists of available ones
 #     self._innernode_to_its_avlble_oslots[enc1.name].remove(oslot)
 #     self._innernode_to_its_avlble_islots[enc2.name].remove(islot)
+    
+  @property
+  def dist(self):
+    """
+    If self has only one OutputNode `onode` and it is a distribution, make
+    `self.dist = onode.dist`. Otherwise, raise AttributeError
+    """
+    if self.num_expected_outputs == 1:
+      inner_onode_name = self._oslot_to_inner_node_oslot[0][0]
+      inner_onode = self.in_builder.nodes[inner_onode_name]
+      try:
+        return inner_onode.dist
+      except AttributeError:
+        raise AttributeError("The output of this CustomNode is not random")
+    else:
+      raise AttributeError("`dist` attribute not defined for CustomNodes "
+                           "with self.num_outputs > 1")
     
   def _get_output(self, inputs=None, islot_to_itensor=None, name=None):
     """
