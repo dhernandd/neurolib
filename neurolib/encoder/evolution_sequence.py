@@ -26,12 +26,11 @@ from neurolib.encoder.seq_cells import CustomCell
 
 class EvolutionSequence(InnerNode):
   """
-  A sequential InnerNode with a Markov internal dynamics. 
+  A sequential InnerNode with Markovian internal dynamics. 
   
   An EvolutionSequence is an InnerNode representing internally a sequence of
-  mappings, each taking the output of their predecessor as input. This makes
+  mappings, each mapping taking the output of their predecessor as input. This makes
   them appropriate to represent the evolution, possibly in time, of information, .
-  
   
   RNNs are children of EvolutionSequence.
   """
@@ -68,14 +67,15 @@ class EvolutionSequence(InnerNode):
 
 class BasicRNNEvolutionSequence(EvolutionSequence):
   """
+  Define an Evolution Sequence with a single latent state and output.
+  
   BasicRNNEvolutionSequence is the simplest possible EvolutionSequence. It is an
   evolution sequence characterized by a single latent state. In particular this
-  implies that a single initial state 
+  implies that only one initial state needs to be provided.
   """
   def __init__(self,
                builder,
                state_sizes,
-#                init_states,
                num_inputs=2,
                name=None,
                cell_class='basic',
@@ -86,33 +86,22 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
     """
     super(BasicRNNEvolutionSequence, self).__init__(builder,
                                                     state_sizes,
-#                                                     init_states=init_states,
                                                     num_inputs=num_inputs,
                                                     name=name,
                                                     mode=mode)
-#     if len(init_states) != 1:
-#       raise ValueError("`len(init_states) != 1`")
-#     if state_size != init_states[0].state_size:
-#       raise ValueError("state_size != init_states.state_size, {} != {}",
-#                        state_size, init_states.state_size)
-# 
-#     if isinstance(init_states[0], str):
-#       self.init_inode = builder.nodes[init_states]
-#     else:
-#       self.init_inode = init_states[0]
     
-    # Get the cell_class
+    # Get cell_class and cell
     self.cell_class = cell_class = (cell_dict[cell_class] if isinstance(cell_class, str) 
                                     else cell_class) 
-    
-    self._update_default_directives(**dirs)
-    
     osize = self.main_output_sizes[0][0]
-    # Add the init_inode and the init_inode -> ev_seq edge
     if issubclass(cell_class, CustomCell): 
       self.cell = cell_class(state_sizes, builder=self.builder)  #pylint: disable=not-callable
     else:
       self.cell = cell_class(osize)
+    
+    self._update_default_directives(**dirs)
+    
+    # Add the init_inode and the init_inode -> ev_seq edge
     self._declare_init_state()
 
   def _declare_init_state(self):
@@ -148,8 +137,7 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
       init_state = self.init_inode()
 
       sorted_inputs = sorted(self._islot_to_itensor.items())
-  #     init_inode = sorted_inputs[0][1]
-      print(sorted_inputs)
+#       print(sorted_inputs)
       inputs_series = tuple(zip(*sorted_inputs[1:]))[1]
       if len(inputs_series) == 1:
         inputs_series = inputs_series[0]

@@ -49,12 +49,12 @@ def mabsdiff(node_dict, node_names):
   
   return tf.reduce_mean(tf.abs(Y - X)**2, name="mabsdiff")
 
-def cross_entropy(node_dict):
+def cross_entropy_with_logits(node_dict, node_names):
   """
   """
   try:
-    nodeY = node_dict['labels']
-    nodeX = node_dict['prediction']
+    nodeY = node_dict[node_names[0]]
+    nodeX = node_dict[node_names[1]]
   except AttributeError:
     raise AttributeError("You must define two OutputNodes, named 'prediction' and "
                          "'response', for 'cross_entropy' training")

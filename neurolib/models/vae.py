@@ -105,8 +105,8 @@ class VariationalAutoEncoder(Model):
       builder.scope = self._main_scope
 
     # Build the tensorflow graph
-    self.nodes = self.builder.nodes
     builder.build()
+    self.nodes = self.builder.nodes
     
     cost = ('elbo', ('Generative', 'Recognition'))
     self.trainer = GDTrainer(self.nodes,

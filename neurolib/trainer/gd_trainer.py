@@ -20,7 +20,8 @@ import tensorflow as tf
 
 from neurolib.utils.utils import addDateTime
 from neurolib.trainer.trainer import Trainer
-from neurolib.trainer.costs import mse, mabsdiff, elbo
+from neurolib.trainer.costs import mse, mabsdiff, elbo,\
+  cross_entropy_with_logits
 from neurolib.utils.graphs import get_session
 
 # pylint: disable=bad-indentation, no-member, protected-access
@@ -45,7 +46,8 @@ class GDTrainer(Trainer):
   """
   summaries_dict = {'mse' : mse,
                     'mabsdiff' : mabsdiff,
-                    'elbo' : elbo}
+                    'elbo' : elbo,
+                    'cross_entropy_wlogits' : cross_entropy_with_logits}
   opt_dict = {'adam' : tf.train.AdamOptimizer,
               'adagrad' : tf.train.AdagradOptimizer,
               'momentum' : tf.train.MomentumOptimizer,

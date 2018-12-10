@@ -52,7 +52,6 @@ class Regression(Model):
   by initializing Regression with num_layers=1 and activation=None
   """
   def __init__(self,
-#                data_name,
                input_dim=None,
                output_dim=1,
                builder=None,
@@ -71,7 +70,6 @@ class Regression(Model):
       builder (StaticBuilder): An instance of Builder used to build a custom
           Regression model
     """
-#     self.data_name = data_name
     self.input_dim = input_dim
     self.output_dim = output_dim
     self.batch_size = batch_size
@@ -122,7 +120,6 @@ class Regression(Model):
     dirs = self.directives
     if builder is None:
       self.builder = builder = StaticBuilder(scope=self._main_scope)
-#                                              batch_size=self.batch_size)
       
       in0 = builder.addInput(self.input_dim, name="features", **dirs)
       enc1 = builder.addInner(1, num_inputs=self.output_dim, **dirs)
@@ -159,7 +156,9 @@ class Regression(Model):
     Check that the user-declared build is consistent with the Regression class
     """
     if 'prediction' not in self.builder.nodes:
-      raise AttributeError("Node 'prediction' not found2")
+      raise AttributeError("Node 'prediction' not found in CustomBuild")
+    if 'response' not in self.builder.nodes:
+      raise AttributeError("Node 'prediction' not found in CustomBuild")
     
   def _check_dataset_correctness(self, dataset):
     """
@@ -188,19 +187,6 @@ class Regression(Model):
     self.trainer.train(dataset_dict,
                        num_epochs,
                        batch_size=self.batch_size)
-
-#     train_dataset, _, _ = self.make_datasets(dataset)
-#     batch_size = self.batch_size
-# 
-#     print('train_dataset.keys():', train_dataset.keys())
-#     sess = get_session()
-#     sess.run(tf.global_variables_initializer())
-#     for _ in range(num_epochs):
-#       self.trainer.update(sess,
-#                           tuple(zip(*train_dataset.items())),
-#                           batch_size=batch_size)
-#       cost = self.reduce_op_from_batches(sess, [self.cost], train_dataset)
-#       print(cost)
     
   def sample(self, input_data, node='prediction', islot=0):
     """

@@ -21,9 +21,6 @@ from abc import abstractmethod
 
 # pylint: disable=bad-indentation, no-member
 
-data_type_dict = {'float32' : tf.float32,
-                  'int32' : tf.int32}
-
 class InputNode(ANode):
   """
   An abstract ANode representing inputs to the Model Graph (MG).
@@ -43,6 +40,9 @@ class InputNode(ANode):
   """
   num_expected_inputs = 0
   
+  dtype_dict = {'float32' : tf.float32,
+                'int32' : tf.int32}
+
   def __init__(self,
                builder,
                state_sizes,
@@ -139,21 +139,22 @@ class PlaceholderInputNode(InputNode):
     """
     Update default directives
     """
-    self.directives = {'data_type' : 'float32'}
+    self.directives = {'dtype' : 'float32'}
     self.directives.update(dirs)
     
-    self.directives['data_type'] = data_type_dict[self.directives['data_type']]
-
   def _build(self):
     """
     Build a PlaceholderInputNode.
     
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
+    dirs = self.directives
+    
     name = self.name
     out_shape = self.main_oshapes
+    dtype = self.dtype_dict[dirs['dtype']]
     for oslot, out_shape in enumerate(self.main_oshapes):
-      self._oslot_to_otensor[oslot] = tf.placeholder(self.directives['data_type'],
+      self._oslot_to_otensor[oslot] = tf.placeholder(dtype,
                                                      shape=out_shape,
                                                      name=name)
     self._is_built = True

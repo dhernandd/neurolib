@@ -13,7 +13,7 @@
 # limitations under the License.
 #
 # ==============================================================================
-from neurolib.encoder.sequence import EvolutionSequence
+from neurolib.encoder.evolution_sequence import EvolutionSequence
 from neurolib.encoder.deterministic import DeterministicNNNode  # @UnusedImport
 
 # pylint: disable=bad-indentation, no-member, protected-access

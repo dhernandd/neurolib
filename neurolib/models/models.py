@@ -114,7 +114,6 @@ class Model(abc.ABC):
     return {'train' : train_dataset,
             'valid' : valid_dataset, 
             'test' : test_dataset}
-
     
   def batch_iterator_from_dataset(self, dataset, shuffle=True):
     """
@@ -165,13 +164,11 @@ class Model(abc.ABC):
                          "self.batch_size({})".format(num_samples,
                                                       self.batch_size))
       res = np.zeros([num_samples] + node._islot_to_shape[islot][1:])
-#       print("res.shape", res.shape)
       i = 0
       for batch_data in self.batch_iterator_from_dataset(input_data,
                                                          shuffle=False):
         r = sess.run(node._islot_to_itensor[islot],
                      feed_dict=batch_data)
-#         print("r.shape", r.shape)
         res[i:i+self.batch_size] = r
         i += 1
       return res
