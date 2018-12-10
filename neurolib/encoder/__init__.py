@@ -43,6 +43,3 @@ act_fn_dict = {'relu' : tf.nn.relu,
                'leaky_relu' : tf.nn.leaky_relu}
 
 layers_dict = {'full' : fully_connected}
-
-cell_dict = {'basic' : tf.nn.rnn_cell.BasicRNNCell,
-             'lstm' : tf.nn.rnn_cell.BasicLSTMCell}

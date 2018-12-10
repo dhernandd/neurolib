@@ -18,9 +18,9 @@ from abc import abstractmethod
 import tensorflow as tf
 
 from neurolib.encoder.basic import InnerNode
-from neurolib.encoder import cell_dict
 from neurolib.encoder.input import NormalInputNode
 from neurolib.encoder.seq_cells import CustomCell
+from neurolib.utils.utils import basic_concatenation
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -34,11 +34,14 @@ class EvolutionSequence(InnerNode):
   
   RNNs are children of EvolutionSequence.
   """
-  num_expected_outputs = 1
+  cell_dict = {'basic' : tf.nn.rnn_cell.BasicRNNCell,
+               'lstm' : tf.nn.rnn_cell.BasicLSTMCell}
+
   def __init__(self,
                builder,
                state_sizes,
                num_inputs=2,
+               num_outputs=1,
                name=None,
                mode='forward'):
     """
@@ -52,7 +55,10 @@ class EvolutionSequence(InnerNode):
     self.main_oshapes = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes[0]
     
+    self.num_expected_outputs = num_outputs
     self.num_expected_inputs = num_inputs
+    self.num_states = len(self.main_output_sizes)
+    self.num_input_seqs = self.num_expected_inputs - self.num_states
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
@@ -61,6 +67,7 @@ class EvolutionSequence(InnerNode):
   @abstractmethod
   def _build(self):
     """
+    Build the EvolutionSequence
     """
     raise NotImplementedError("Please implement me.")
 
@@ -77,9 +84,9 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
                builder,
                state_sizes,
                num_inputs=2,
+               num_outputs=1,
                name=None,
                cell_class='basic',
-               mode='forward',
                **dirs):
     """
     Initialize the BasicRNNEvolutionSequence
@@ -87,23 +94,45 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
     super(BasicRNNEvolutionSequence, self).__init__(builder,
                                                     state_sizes,
                                                     num_inputs=num_inputs,
+                                                    num_outputs=num_outputs,
                                                     name=name,
-                                                    mode=mode)
-    
+                                                    mode='forward')
     # Get cell_class and cell
-    self.cell_class = cell_class = (cell_dict[cell_class] if isinstance(cell_class, str) 
-                                    else cell_class) 
-    osize = self.main_output_sizes[0][0]
+    if isinstance(cell_class, str):
+      self.cclass = cell_class
+      self._check_dims_default_rnns(cell_class)
+      self.cell_class = cell_class = self.cell_dict[cell_class]  
+    else:
+      self.cell_class = cell_class
+    
     if issubclass(cell_class, CustomCell): 
       self.cell = cell_class(state_sizes, builder=self.builder)  #pylint: disable=not-callable
     else:
+      osize = self.main_output_sizes[0][0]
       self.cell = cell_class(osize)
     
     self._update_default_directives(**dirs)
     
-    # Add the init_inode and the init_inode -> ev_seq edge
+    # Add the init_inode_names and the init_inode_names -> ev_seq edge
     self._declare_init_state()
 
+  def _check_dims_default_rnns(self, cclass):
+    """
+    """
+    if cclass == 'basic':
+      pass
+    if cclass == 'lstm':
+      if len(self.main_output_sizes) == 1:
+        self.main_output_sizes = self.main_output_sizes*2
+      if len(self.main_output_sizes) == 2:
+        if self.main_output_sizes[0] != self.main_output_sizes[1]:
+          raise ValueError("`self.main_output_sizes[0] != self.main_output_sizes[1]` "
+                           "({}, {})".format(self.main_output_sizes[0],
+                                             self.main_output_sizes[1]))
+      if len(self.main_output_sizes) > 2:
+        raise ValueError("`len(self.main_output_sizes) == 1 or 2` for an LSTM cell")
+      
+    
   def _declare_init_state(self):
     """
     Declare the initial state of the Evolution Sequence.
@@ -111,15 +140,18 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
     Requires that the BasicRNNEvolutionSequence has only one evolution input
     """
     builder = self.builder
-    osize = self.main_output_sizes[0][0]
+    self.init_inodes = []
     try:
-      self.init_inode = self.cell.get_init_states(ext_builder=builder)[0]
-      self.init_inode = builder.nodes[self.init_inode]
-      builder.addDirectedLink(self.init_inode, self, islot=0)
+      self.init_inode_names = self.cell.get_init_states(ext_builder=builder)[0]
+      for islot, name in enumerate(self.init_inode_names):
+        init_inode = builder.nodes[name]
+        builder.addDirectedLink(init_inode, self, islot=islot)
+        self.init_inodes.append(init_inode)
     except AttributeError:
-      self.init_inode = builder.addInput(osize, iclass=NormalInputNode)
-      builder.addDirectedLink(self.init_inode, self, islot=0)
-      self.init_inode = builder.nodes[self.init_inode]
+      for islot, osize in enumerate(self.main_output_sizes):
+        init_inode_name = builder.addInput(osize[0], iclass=NormalInputNode)
+        builder.addDirectedLink(init_inode_name, self, islot=islot)
+        self.init_inodes.append(builder.nodes[init_inode_name])
     
   def _update_default_directives(self, **dirs):
     """
@@ -127,26 +159,31 @@ class BasicRNNEvolutionSequence(EvolutionSequence):
     """
     self.directives = {}
     self.directives.update(dirs)
-        
+  
+  def get_init_state_tuple(self):
+    """
+    Get the initial states for this Evolution Sequence
+    """
+    if len(self.init_inodes) == 1:
+      return self.init_inodes[0]()
+    init_states = tuple(node() for node in self.init_inodes)
+    if self.cclass == 'lstm':
+      init_states = tf.nn.rnn_cell.LSTMStateTuple(init_states[0],
+                                                  init_states[1])
+    return init_states
+    
   def _build(self):
     """
     Build the Evolution Sequence
     """
     cell = self.cell
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
-      init_state = self.init_inode()
-
-      sorted_inputs = sorted(self._islot_to_itensor.items())
-#       print(sorted_inputs)
-      inputs_series = tuple(zip(*sorted_inputs[1:]))[1]
-      if len(inputs_series) == 1:
-        inputs_series = inputs_series[0]
-      else:
-        inputs_series = tf.concat(inputs_series, axis=-1)
-        
+      init_states = self.get_init_state_tuple()
+      inputs_series = basic_concatenation(self._islot_to_itensor,
+                                          start_from=self.num_states)
       states_series, _ = tf.nn.dynamic_rnn(cell,
                                            inputs_series,
-                                           initial_state=init_state)
+                                           initial_state=init_states)
     
     self._oslot_to_otensor[0] = tf.identity(states_series, name=self.name)
     
@@ -163,7 +200,6 @@ class LSTMEvolutionSequence(EvolutionSequence):
   def __init__(self,
                builder,
                state_sizes,
-#                init_states,
                num_inputs=3,
                name=None,
                cell_class='lstm',
@@ -178,12 +214,12 @@ class LSTMEvolutionSequence(EvolutionSequence):
                                                 name=name,
                                                 mode=mode)
     
-    self.cell_class = cell_class = (cell_dict[cell_class] if isinstance(cell_class, str) 
+    self.cell_class = cell_class = (self.cell_dict[cell_class] if isinstance(cell_class, str) 
                                     else cell_class) 
     self.num_units = self.main_output_sizes[0][0]
     self._update_default_directives(**dirs)
     
-    # Add the init_inode and the init_inode -> ev_seq edge
+    # Add the init_inode_names and the init_inode_names -> ev_seq edge
     if issubclass(cell_class, CustomCell):
       self.is_custom = True
       self.cell = cell_class(state_sizes, builder=self.builder)  #pylint: disable=not-callable
@@ -193,7 +229,7 @@ class LSTMEvolutionSequence(EvolutionSequence):
     
     self._declare_init_state()
 
-#     builder.addDirectedLink(self.init_inode, self, islot=0)
+#     builder.addDirectedLink(self.init_inode_names, self, islot=0)
 #     builder.addDirectedLink(self.init_hidden_state, self, islot=1)
     
   def _declare_init_state(self):
@@ -208,7 +244,7 @@ class LSTMEvolutionSequence(EvolutionSequence):
       self.init_inodes = self.cell.get_init_states(ext_builder=builder)[0]
       
 #     try:
-#       self.init_inode = builder.nodes[self.init_inode]
+#       self.init_inode_names = builder.nodes[self.init_inode_names]
       for islot, init_node in self.init_inodes.items():
         builder.addDirectedLink(init_node, self, islot=islot)
 #     except AttributeError:
@@ -229,7 +265,7 @@ class LSTMEvolutionSequence(EvolutionSequence):
     self.directives = {'cell' : 'lstm'}
     self.directives.update(dirs)
     
-    self.directives['cell'] = cell_dict[self.directives['cell']]
+    self.directives['cell'] = self.cell_dict[self.directives['cell']]
     
   def _build(self):
     """
@@ -281,7 +317,7 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
                **dirs):
     """
     """
-    self.init_inode = init_states[0]
+    self.init_inode_names = init_states[0]
     super(LinearNoisyDynamicsEvSeq, self).__init__(label,
                                                    num_features,
                                                    init_states=init_states,
@@ -292,7 +328,7 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
                                                    builder=builder,
                                                    mode=mode)
 
-    builder.addDirectedLink(self.init_inode, self, islot=0)
+    builder.addDirectedLink(self.init_inode_names, self, islot=0)
     self._update_default_directives(**dirs)
     
   def _update_default_directives(self, **dirs):
@@ -322,7 +358,7 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
       cell = rnn_cell(self.state_size)  #pylint: disable=not-callable
       
       print("inputs_series", inputs_series)
-      print("init_inode", init_state)
+      print("init_inode_names", init_state)
       states_series, _ = tf.nn.dynamic_rnn(cell,
                                            inputs_series,
                                            initial_state=init_state)

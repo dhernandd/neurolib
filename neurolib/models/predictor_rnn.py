@@ -57,7 +57,7 @@ class PredictorRNN(Model):
         output_dims (int) : The dimensions of the output tensors occupying
             islots in the MG OutputSequences.
         
-        num_inputs (int) :
+        num_inputs (int) : The number of Inputs 
         
         builder (SequentialBuilder) :
         
@@ -75,30 +75,8 @@ class PredictorRNN(Model):
         
         dirs (dict) :
     """
-    self.input_dims = input_dims
-    self.state_dims = state_dims
-    self.output_dims = output_dims
-    self.num_inputs = num_inputs
-    self.is_categorical = is_categorical
-    if is_categorical:
-      if not num_labels:
-        raise ValueError("`num_labels` argument must be a positive integer "
-                         "for categorical data")
-      self.num_labels = num_labels
-    
-    self.batch_size = batch_size
-    self.max_steps = max_steps
-
-    self.cell_class = cell_class
-    self.seq_class = seq_class
-    are_seq_and_cell_compatible(seq_class, cell_class)
-    
-    self._main_scope = 'PredictorRNN'
-    self.rslt_dir = rslt_dir
-    self.save = save
-    
     super(PredictorRNN, self).__init__()
-
+    
     self.builder = builder
     if self.builder is None:
       self._is_custom_build = False
@@ -111,9 +89,32 @@ class PredictorRNN(Model):
       if output_dims is None:
         raise ValueError("Argument output_dims is required to build the default "
                          "RNNClassifier")
+
+      self.cell_class = cell_class
+      self.seq_class = seq_class
     else:
       self._is_custom_build = True
-        
+
+    self.input_dims = input_dims
+    self.state_dims = state_dims
+    self.output_dims = output_dims
+    self._dims_to_list()
+    
+    self.num_inputs = num_inputs
+    self.is_categorical = is_categorical
+    if is_categorical:
+      if not num_labels:
+        raise ValueError("`num_labels` argument must be a positive integer "
+                         "for categorical data")
+      self.num_labels = num_labels
+    
+    self.batch_size = batch_size
+    self.max_steps = max_steps
+    
+    self._main_scope = 'PredictorRNN'
+    self.rslt_dir = rslt_dir
+    self.save = save
+    
     self._update_default_directives(**dirs)
 
     # Defined on build
@@ -121,6 +122,22 @@ class PredictorRNN(Model):
     self.cost = None
     self.trainer = None
 
+  def _dims_to_list(self):
+    """
+    Store the dimensions of the Model in list of lists format
+    """
+    if isinstance(self.input_dims, int):
+      self.input_dims = [[self.input_dims]]
+    if isinstance(self.state_dims, int):
+      self.state_dims = [[self.state_dims]]
+    if isinstance(self.output_dims, int):
+      self.output_dims = [[self.output_dims]]
+
+    # Fix dimensions for special cases
+    if self.cell_class == 'lstm':
+      if len(self.state_dims) == 1:
+        self.state_dims = self.state_dims*2
+      
   def _update_default_directives(self,
                                  **directives):
     """
@@ -142,9 +159,11 @@ class PredictorRNN(Model):
     if builder is None:
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
                                                  max_steps=self.max_steps)
+      nstate_dims, ninput_dims = len(self.state_dims), len(self.input_dims)
+      ninputs_evseq = ninput_dims + nstate_dims
       is1 = builder.addInputSequence(self.input_dims, name='inputSeq')
       evs1 = builder.addEvolutionSequence(state_sizes=self.state_dims,
-                                          num_inputs=2,
+                                          num_inputs=ninputs_evseq,
                                           ev_seq_class=self.seq_class,
                                           cell_class=self.cell_class,
                                           name='ev_seq',
@@ -155,7 +174,7 @@ class PredictorRNN(Model):
         inn1 = builder.addInnerSequence(self.output_dims)
       os1 = builder.addOutputSequence(name='prediction')
             
-      builder.addDirectedLink(is1, evs1, islot=1)
+      builder.addDirectedLink(is1, evs1, islot=nstate_dims)
       builder.addDirectedLink(evs1, inn1)
       builder.addDirectedLink(inn1, os1)      
     else:

@@ -65,16 +65,18 @@ def check_name(f):
   
   return f_checked
 
-def basic_concatenation(_input):
+def basic_concatenation(_input, start_from=0):
   """
+  Concatenate a list of tensors or a dictionary with items (slot, tensor)
   """
   try:
-    _input = tf.concat(_input, axis=-1)
+    itensors = tf.concat(_input[start_from:], axis=-1)
   except TypeError:
-    itensors = list(zip(*sorted(_input.items())))[1] # mae sure inputs are ordered
-    _input = tf.concat(itensors, axis=-1)
-  
-  return _input
+    itensors = list(zip(*sorted(_input.items())[start_from:]))[1] # make sure inputs are ordered
+    if len(itensors) == 1:
+      return itensors[0]
+    itensors = tf.concat(itensors, axis=-1)
+  return itensors
 
 def addDateTime(s = ""):
     """
