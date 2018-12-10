@@ -23,6 +23,8 @@ from neurolib.trainer.trainer import Trainer
 from neurolib.trainer.costs import mse, mabsdiff, elbo,\
   cross_entropy_with_logits
 from neurolib.utils.graphs import get_session
+from neurolib.trainer.tr_utils import batch_iterator_from_dataset,\
+  get_keys_and_data
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -54,7 +56,7 @@ class GDTrainer(Trainer):
               'gd' : tf.train.GradientDescentOptimizer}
 
   def __init__(self,
-               nodes,
+               builder,
                cost,
                name='test',
                batch_size=1,
@@ -64,7 +66,8 @@ class GDTrainer(Trainer):
     """
     Initialize a GDTrainer
     """
-    self.nodes = nodes
+    self.builder = builder
+    self.nodes = builder.nodes
     self.batch_size = batch_size
     self.name = name
     self.cost = cost
@@ -116,6 +119,22 @@ class GDTrainer(Trainer):
     self.train_op = opt.apply_gradients(gradsvars, global_step=self.train_step,
                                         name='train_op')
     
+  def make_feed_dict(self, dataset):
+    """
+    Make a feed_dict for sess.run from a dataset.
+    
+    In particular, add inputs for all the dummy variables defined by the Builder
+    associated to this model
+    """
+    _, data = get_keys_and_data(dataset)
+    batch_size = data[0].shape[0]
+    for key in self.builder.dummies:
+      T = tf.get_default_graph().get_tensor_by_name(key)
+      T_sh = T.shape.as_list()[1:]
+      dummy_data = np.zeros([batch_size]+T_sh)
+      dataset[key] = dummy_data
+    return dataset
+    
   def update(self, sess, dataset, batch_size):
     """
     Perform a single gradient descent update for the variables in this cost.
@@ -124,12 +143,10 @@ class GDTrainer(Trainer):
     TODO: Get rid of the feed_dict in favor of tensorflow Queues! Add
     multithreading capabilities
     """
-    train_dataset = dataset['train']
-    train_keys, train_data = tuple(zip(*train_dataset.items()))
-    data_iterator = make_data_iterator(train_data, batch_size=batch_size)
-    
-    for batch in data_iterator:
-      feed_dict = dict(zip(train_keys, batch))
+    dataset_iter = batch_iterator_from_dataset(dataset,
+                                               self.batch_size)
+    for batch_dct in dataset_iter:
+      feed_dict = self.make_feed_dict(batch_dct)
       sess.run([self.train_op], feed_dict=feed_dict)
       
   def train(self, dataset_dict, num_epochs, batch_size=None):
@@ -139,9 +156,8 @@ class GDTrainer(Trainer):
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
 
-    if self.save:    
-      merged_summaries = self.merge_summaries()
     batch_size = batch_size or self.batch_size or 1
+    merged_summaries = self.merge_summaries()
     sess = get_session()
     sess.run(tf.global_variables_initializer())
     for ep in range(num_epochs):
@@ -152,7 +168,7 @@ class GDTrainer(Trainer):
 
       # GD update
       self.update(sess,
-                  dataset_dict,
+                  train_dataset,
                   batch_size=batch_size)
       ctrain = self.reduce_op_from_batches(sess, 
                                            [self.cost],
@@ -161,9 +177,7 @@ class GDTrainer(Trainer):
       
       # Add summaries
       if 'summaries' in self.directives and self.save:
-        summaries = sess.run(merged_summaries,
-                             feed_dict=train_dataset)
-        self.writer.add_summary(summaries, ep)
+        self.run_summaries(sess, train_dataset, merged_summaries, ep)
       
       # Save on validation improvement
       if self.save:
@@ -173,7 +187,7 @@ class GDTrainer(Trainer):
         if new_cvalid < cvalid:
           cvalid = new_cvalid
           print('Valid. cost:', cvalid, '... Saving...')
-          rlt_dir = self.rslt_dir + self.name + '/'+ addDateTime() + '/'
+          rlt_dir = self.rslt_dir + self.name + '/' + addDateTime() + '/'
           if not os.path.exists(rlt_dir):
             os.makedirs(rlt_dir)
           self.saver.save(sess,
@@ -181,6 +195,14 @@ class GDTrainer(Trainer):
                           global_step=self.train_step)
     sess.close()
   
+  def run_summaries(self, sess, dataset, merged_summaries, epoch):
+    """
+    Run all the defined summaries and write to a log
+    """
+    fd_dct = self.make_feed_dict(dataset)
+    summaries = sess.run(merged_summaries, feed_dict=fd_dct)
+    self.writer.add_summary(summaries, epoch)
+    
   def reduce_op_from_batches(self,
                              sess,
                              ops,
@@ -192,29 +214,21 @@ class GDTrainer(Trainer):
     TODO: Document!
     """
     if self.batch_size is None:
-      return sess.run(ops, feed_dict=dataset)
+      fd_dct = self.make_feed_dict(dataset)
+      return sess.run(ops, feed_dict=fd_dct)
     else:
       reduced = 0
-      dataset_iter = self.batch_iterator_from_dataset(dataset)
+      dataset_iter = batch_iterator_from_dataset(dataset,
+                                                 self.batch_size,
+                                                 shuffle=False)
       if reduction == 'mean' or reduction == 'sum':
         c = 0
-        for batch_data in dataset_iter:
+        for batch_dct in dataset_iter:
           c += 1
-          reduced += sess.run(ops, feed_dict=batch_data)[0]
+          fd_dct = self.make_feed_dict(batch_dct)
+          reduced += sess.run(ops, feed_dict=batch_dct)[0]
         if reduction == 'mean': return reduced/(self.batch_size*c)
-        else: return reduced
-
-  def batch_iterator_from_dataset(self, dataset, shuffle=True):
-    """
-    Make a batch iterator from a dataset
-    """
-    nsamps = len(list(dataset.values())[0])
-    l_inds = np.arange(nsamps)
-    if shuffle:
-      np.random.shuffle(l_inds)
-    for idx in range(nsamps//self.batch_size):
-      yield {key : value[l_inds[idx:idx+self.batch_size]] for key, value
-             in dataset.items()}        
+        else: return reduced      
         
   def merge_summaries(self):
     """
@@ -225,7 +239,6 @@ class GDTrainer(Trainer):
       return merged_summaries
 
     summaries_list = self.directives['summaries']
-    print("summaries_list", summaries_list)
     for summ in summaries_list:
       name = summ[0]
       curr_summ = tf.summary.scalar(name,

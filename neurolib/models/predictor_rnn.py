@@ -173,7 +173,7 @@ class PredictorRNN(Model):
       cost = ('cross_entropy_wlogits', ('observation', 'prediction'))
     else:
       cost = ('mse', ('observation', 'prediction'))
-    self.trainer = GDTrainer(self.nodes,
+    self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,
                              rslt_dir=self.rslt_dir,

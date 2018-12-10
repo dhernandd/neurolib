@@ -13,9 +13,6 @@
 # limitations under the License.
 #
 # ==============================================================================
-import os
-os.environ['PATH'] += ':/usr/local/bin'
-
 import unittest
 
 import numpy as np

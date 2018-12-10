@@ -97,8 +97,7 @@ class GDTrainerTest(tf.test.TestCase):
     # Build the tensorflow graph
     builder.build()
 
-    nodes = builder.nodes
-    GDTrainer(nodes,
+    GDTrainer(builder,
               cost=('mse', ('prediction','response')),
               **dirs)
     
@@ -129,8 +128,7 @@ class GDTrainerTest(tf.test.TestCase):
 
     builder.build()
 
-    nodes = builder.nodes
-    trainer = GDTrainer(nodes,
+    trainer = GDTrainer(builder,
                         cost=('mse', ('prediction', 'response')),
                         **dirs)
     trainer.train(dataset_dict, num_epochs, batch_size=self.batch_size)
@@ -166,8 +164,7 @@ class GDTrainerTest(tf.test.TestCase):
 
     builder.build()
 
-    nodes = builder.nodes
-    trainer = GDTrainer(nodes,
+    trainer = GDTrainer(builder,
                         cost=('mse', ('prediction', 'response')),
                         save=True,
                         **dirs)

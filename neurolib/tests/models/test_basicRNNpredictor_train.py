@@ -23,8 +23,10 @@ from neurolib.models.predictor_rnn import PredictorRNN
 # pylint: disable=bad-indentation, no-member, protected-access
 
 NUM_TESTS = 2
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+range_from = 0
+range_to = 2
+tests_to_run = list(range(range_from, range_to))
+test_to_run = 10
 
 def generate_echo_data(length, echo_step, max_steps):
   """
@@ -110,7 +112,27 @@ class RNNClassifierTrainTest(tf.test.TestCase):
     model.build()
     model.train(dataset, num_epochs=20)
     
-
+  @unittest.skipIf(test_to_run != 100, "Skipping")
+  def test_train2(self):
+    """
+    Test save:
+    """
+    num_labels = 4
+    max_steps = 25
+    echo_step = 3
+    dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
+    
+    model = PredictorRNN(input_dims=1,
+                         state_dims=20,
+                         output_dims=1,
+                         batch_size=1,
+                         max_steps=max_steps,
+                         num_labels=num_labels,
+                         is_categorical=True,
+                         save=True,
+                         rslt_dir='')
+    model.build()
+    model.train(dataset, num_epochs=20)
     
 if __name__ == '__main__':
   unittest.main(failfast=True) 

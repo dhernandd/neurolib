@@ -220,19 +220,19 @@ class NormalInputNode(InputNode):
     Update the node directives
     """
     if self.D[0] == 1:
-      oshape = self.main_oshapes[0][-1:]
-      osize = oshape[0]
-#       oshape = self.main_oshapes[0][-1:]
+      oshape = self.main_oshapes[0]
+      osize = oshape[-1]
     else:
       raise NotImplementedError("main output with rank > 1 is not implemented "
                                 "for the Normal Input Node. ")
     
+    dummy = tf.placeholder(tf.float32, oshape, self.name + 'dummy')
+    self.builder.dummies.add(dummy.name)
     if self.is_sequence and self.max_steps is None:
-      mean_init = tf.zeros(oshape)
+      mean_init = tf.zeros_like(dummy)
       scale = tf.eye(osize)
       scale_init = tf.linalg.LinearOperatorFullMatrix(scale)
     else:
-      dummy = tf.placeholder(tf.float32, oshape, 'dummy')
       mean_init = tf.zeros_like(dummy)
       scale = tf.eye(osize)
       scale_init = tf.linalg.LinearOperatorFullMatrix(scale)
@@ -247,13 +247,13 @@ class NormalInputNode(InputNode):
     """
     Declare the statistics of the normal as secondary outputs. 
     """
-    oshape = self.main_oshapes[0][-1:]
+    oshape = self.main_oshapes[0]
     
     self._oslot_to_shape[1] = oshape # mean oslot
     o1 = self.builder.addOutput(name=self.directives['output_mean_name'])
     self.builder.addDirectedLink(self, o1, oslot=1)
     
-    self._oslot_to_shape[2] = oshape[:-1] + [oshape[-1]]*2 # stddev oslot  
+    self._oslot_to_shape[2] = oshape[1:-1] + [oshape[-1]]*2 # stddev oslot  
     o2 = self.builder.addOutput(name=self.directives['output_scale_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
   
@@ -261,7 +261,8 @@ class NormalInputNode(InputNode):
     """
     Get a sample from the distribution.
     """
-    return self.dist.sample(sample_shape=self.batch_size)
+#     return self.dist.sample(sample_shape=self.batch_size)
+    return self.dist.sample()
   
   def __call__(self):
     """
@@ -285,9 +286,7 @@ class NormalInputNode(InputNode):
     self.dist = dist = dist_dict['MultivariateNormalLinearOperator'](loc=mean,
                                                                      scale=scale)
     
-    dummy = tf.placeholder(tf.float32, [self.batch_size], 'dummy')
-    self._oslot_to_otensor[0] = dist.sample(sample_shape=self.batch_size,
-                                            name=self.name)
+    self._oslot_to_otensor[0] = dist.sample(sample_shape=(), name=self.name)
     assert self._oslot_to_otensor[0].shape.as_list() == self._oslot_to_shape[0] 
     
     self._oslot_to_otensor[1] = dist.loc

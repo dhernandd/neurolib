@@ -79,6 +79,7 @@ class StaticBuilder(Builder):
       batch_size (int or None): The batch size. Defaults to None (unspecified)
     """
     self.custom_encoders = {}
+    self.dummies = set()
     self.adj_matrix = None
     self.adj_list = None
 

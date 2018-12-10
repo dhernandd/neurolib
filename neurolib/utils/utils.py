@@ -52,7 +52,6 @@ def make_data_iterator(data, batch_size=1, shuffle=True):
   for i in range(0, nsamps, batch_size):
     yield [ d[l_inds[i:i+batch_size]] for d in data ]
         
-        
 def check_name(f):
   """
   Check that the name of a node has not been taken

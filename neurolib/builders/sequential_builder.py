@@ -65,7 +65,7 @@ class SequentialBuilder(StaticBuilder):
   def __init__(self,
                max_steps,
                scope=None,
-               batch_size=1):
+               batch_size=None):
     """
     Initialize the SequentialBuilder
     

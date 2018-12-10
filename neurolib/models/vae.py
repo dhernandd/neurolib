@@ -109,7 +109,7 @@ class VariationalAutoEncoder(Model):
     self.nodes = self.builder.nodes
     
     cost = ('elbo', ('Generative', 'Recognition'))
-    self.trainer = GDTrainer(self.nodes,
+    self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,
                              rslt_dir=self.rslt_dir,
