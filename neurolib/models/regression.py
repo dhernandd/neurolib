@@ -157,8 +157,6 @@ class Regression(Model):
     """
     if 'prediction' not in self.builder.nodes:
       raise AttributeError("Node 'prediction' not found in CustomBuild")
-    if 'response' not in self.builder.nodes:
-      raise AttributeError("Node 'prediction' not found in CustomBuild")
     
   def _check_dataset_correctness(self, dataset):
     """
