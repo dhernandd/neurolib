@@ -74,10 +74,7 @@ class InputNode(ANode):
     # Deal with sequences
     self.main_oshapes, self.D = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes[0]
-    
-#     if any([i is None for i in self.main_oshapes]):
-#       self.dummy_ph = tf.placeholder(tf.float32, self.main_oshape, 'dummy')
-  
+      
   @abstractmethod
   def _build(self):
     """

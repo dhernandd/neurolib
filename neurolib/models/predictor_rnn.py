@@ -16,7 +16,6 @@
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
-from neurolib.encoder.cells import are_seq_and_cell_compatible
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -86,19 +85,25 @@ class PredictorRNN(Model):
       if state_dims is None:
         raise ValueError("Argument state_dims is required to build the default "
                          "RNNClassifier")
-      if output_dims is None:
+      if output_dims is None and not is_categorical:
         raise ValueError("Argument output_dims is required to build the default "
+                         "RNNClassifier")
+      if num_labels is None and is_categorical:
+        raise ValueError("Argument num_labels is required to build the default "
                          "RNNClassifier")
 
       self.cell_class = cell_class
       self.seq_class = seq_class
+      
+      # Deal with dimensions
+      self.input_dims = input_dims
+      self.state_dims = state_dims
+      self.output_dims = output_dims
+      self._dims_to_list()
     else:
       self._is_custom_build = True
-
-    self.input_dims = input_dims
-    self.state_dims = state_dims
-    self.output_dims = output_dims
-    self._dims_to_list()
+      
+      self.input_dims = builder.nodes['inputSeq'].main_output_sizes
     
     self.num_inputs = num_inputs
     self.is_categorical = is_categorical

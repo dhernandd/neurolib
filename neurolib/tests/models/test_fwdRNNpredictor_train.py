@@ -23,8 +23,8 @@ from neurolib.models.predictor_rnn import PredictorRNN
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS: 3
-range_from = 0
-range_to = 3
+range_from = 1
+range_to = 2
 tests_to_run = list(range(range_from, range_to))
 test_to_run = 10
 
