@@ -13,8 +13,7 @@
 # limitations under the License.
 #
 # ==============================================================================
-from neurolib.encoder.evolution_sequence import (BasicRNNEvolutionSequence, 
-                                                 LSTMEvolutionSequence,
+from neurolib.encoder.evolution_sequence import (RNNEvolutionSequence, 
                                                  CustomEvolutionSequence)
 from neurolib.utils.utils import check_name
 from neurolib.builders.static_builder import StaticBuilder
@@ -22,8 +21,7 @@ from neurolib.encoder.input import PlaceholderInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-sequence_dict = {'basic' : BasicRNNEvolutionSequence,
-                 'lstm' : LSTMEvolutionSequence,
+sequence_dict = {'rnn' : RNNEvolutionSequence,
                  'custom' : CustomEvolutionSequence}
 
 class SequentialBuilder(StaticBuilder):
@@ -64,14 +62,16 @@ class SequentialBuilder(StaticBuilder):
   """
   def __init__(self,
                max_steps,
-               scope=None,
+               scope,
                batch_size=None):
     """
     Initialize the SequentialBuilder
     
     Args:
       max_steps (int): The maximum number of steps in the sequence
+      
       scope (str): The tensorflow scope of the Model to be built
+      
       batch_size (int): The batch size. Defaults to None (unspecified)
     """
     self.max_steps = max_steps
@@ -109,7 +109,7 @@ class SequentialBuilder(StaticBuilder):
   
   @check_name
   def addInnerSequence(self, 
-                       state_size, 
+                       state_sizes, 
                        num_inputs=1,
                        node_class='deterministic', 
                        name=None,
@@ -117,7 +117,7 @@ class SequentialBuilder(StaticBuilder):
     """
     Add an InnerSequence
     """
-    return self.addInner(state_size,
+    return self.addInner(state_sizes,
                          num_inputs=num_inputs,
                          node_class=node_class,
                          is_sequence=True,
@@ -127,8 +127,9 @@ class SequentialBuilder(StaticBuilder):
   def addEvolutionSequence(self,
                            state_sizes, 
                            num_inputs,
+                           num_outputs=1,
                            mode='forward',
-                           ev_seq_class='basic',
+                           ev_seq_class='rnn',
                            cell_class='basic', 
                            name=None,
                            **dirs):
@@ -140,6 +141,7 @@ class SequentialBuilder(StaticBuilder):
     node = ev_seq_class(self,
                         state_sizes,
                         num_inputs=num_inputs,
+                        num_outputs=num_outputs,
                         name=name,
                         mode=mode,
                         cell_class=cell_class,

@@ -110,3 +110,4 @@ class CopyNode(InnerNode):
     
 if __name__ == '__main__':
   print(dist_dict)
+  

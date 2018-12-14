@@ -145,7 +145,11 @@ class ANode(abc.ABC):
     bsz = self.batch_size
     mx_stps = self.max_steps
     ssz = self.main_output_sizes
-    main_oshapes = [[bsz, mx_stps]]*len(ssz) if self.is_sequence else [[bsz]]*len(ssz)
+    if self.is_sequence:
+      main_oshapes = [[bsz, mx_stps] for _ in range(len(ssz))]
+    else:
+      main_oshapes = [[bsz] for _ in range(len(ssz))]
+    
     D = []
     try: # quack!
       for oslot, osize in enumerate(ssz):
@@ -153,6 +157,7 @@ class ANode(abc.ABC):
         D.append(len(osize))
     except TypeError:
       raise TypeError("Failed to define `main_oshapes`")
+
     return main_oshapes, D
     
   def get_islot_shape(self, islot=0):

@@ -22,6 +22,7 @@ def mse(node_dict, node_names):
   Define the Mean Squared Error between two Outputs of the Model Graph
   """
   try:
+#     print(node_dict)
     nodeY = node_dict[node_names[0]]
     nodeX = node_dict[node_names[1]]
   except AttributeError:

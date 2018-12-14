@@ -36,7 +36,7 @@ class PredictorRNN(Model):
                builder=None,
                batch_size=1,
                max_steps=25,
-               seq_class='basic',
+               seq_class='rnn',
                cell_class='basic',
                num_labels=None,
                is_categorical=False,

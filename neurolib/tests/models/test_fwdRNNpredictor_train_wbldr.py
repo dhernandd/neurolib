@@ -92,16 +92,17 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     state_dims_2 = [[10]]
     output_dims = [[1]]
     ninputs_evseq_1 = ninputs_evseq_2 = 2
-    builder = SequentialBuilder(max_steps=25)
+    scope = 'RNNPredictor'
+    builder = SequentialBuilder(max_steps=25, scope=scope)
     is1 = builder.addInputSequence(input_dims, name='inputSeq')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='basic',
                                         name='ev_seq1')
     evs2 = builder.addEvolutionSequence(state_sizes=state_dims_2,
                                         num_inputs=ninputs_evseq_2,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='basic',
                                         name='ev_seq2')
     inn1 = builder.addInnerSequence(output_dims)
@@ -126,22 +127,23 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     max_steps = 25
     echo_step = 3
     dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
+    scope = 'RNNPredictor'
     
     # Define a MG with 2 RNNs ('forward' : ['lstm', 'basic'])
     input_dims = [[1]]
     state_dims_1 = [[5], [5]]
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 2
-    builder = SequentialBuilder(max_steps=25)
+    builder = SequentialBuilder(max_steps=25, scope=scope)
     is1 = builder.addInputSequence(input_dims, name='inputSeq')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='lstm',
                                         name='ev_seq1')
     evs2 = builder.addEvolutionSequence(state_sizes=state_dims_2,
                                         num_inputs=ninputs_evseq_2,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='basic',
                                         name='ev_seq2')
     inn1 = builder.addInnerSequence(num_labels)
@@ -168,22 +170,23 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     max_steps = 25
     echo_step = 3
     dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
+    scope = 'RNNPredictor'
     
     # Define a MG with 2 RNNs ('forward' : ['lstm', 'basic'])
     input_dims = [[1]]
     state_dims_1 = [[5], [5]]
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 2
-    builder = SequentialBuilder(max_steps=25)
+    builder = SequentialBuilder(max_steps=25, scope=scope)
     is1 = builder.addInputSequence(input_dims, name='inputSeq')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='lstm',
                                         name='ev_seq1')
     evs2 = builder.addEvolutionSequence(state_sizes=state_dims_2,
                                         num_inputs=ninputs_evseq_2,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='basic',
                                         name='ev_seq2')
     inn1 = builder.addInnerSequence(num_labels, num_inputs=2)
@@ -211,22 +214,23 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     max_steps = 25
     echo_step = 3
     dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
+    scope = 'RNNPredictor'
     
     # Define a MG with 2 RNNs ('forward' : ['lstm', 'basic'])
     input_dims = [[1]]
     state_dims_1 = [[5], [5]]
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 3
-    builder = SequentialBuilder(max_steps=25)
+    builder = SequentialBuilder(max_steps=25, scope=scope)
     is1 = builder.addInputSequence(input_dims, name='inputSeq')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='lstm',
                                         name='ev_seq1')
     evs2 = builder.addEvolutionSequence(state_sizes=state_dims_2,
                                         num_inputs=ninputs_evseq_2,
-                                        ev_seq_class='basic',
+                                        ev_seq_class='rnn',
                                         cell_class='basic',
                                         name='ev_seq2')
     inn1 = builder.addInnerSequence(num_labels, num_inputs=2)

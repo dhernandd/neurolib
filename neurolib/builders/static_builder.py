@@ -206,6 +206,7 @@ class StaticBuilder(Builder):
                          "no clue why that would be.\n Please report to my "
                          "master.")
     elif oslot not in node1._oslot_to_shape:
+      print("oslot, node1._oslot_to_shape:", oslot, node1._oslot_to_shape)
       raise KeyError("The requested oslot has not been found. Inferring this "
                      "oslot shape may require knowledge of the shape of its "
                      "inputs. In that case, all the inputs for this node must "
@@ -331,19 +332,23 @@ class StaticBuilder(Builder):
     This method follows the directed links in the Model Graph (MG) in BFS
     fashion to construct the tensorflow graph. The method behaves slightly
     different for the case in which self is the inside Builder of a CustomNode.
-    In that case, the method must allow for sampling from the CustomNode.
+    In that case, the method must allows for sampling from the CustomNode. These
+    two cases may be different enough that they may need to be implemented
+    separately in a future version.
     
     The algorithm goes through the following stages:
     
+    A. If custom_node is provided:
+      A.1. Loop over the islots of inode and get the corresponding islots
+          of the parent custom_node.
+      A.2. Assign the inputs to custom_node._islot_to_itensor
+
     * For inode in self.input_nodes:
-        A. If custom_node is provided:
-          A.1. Loop over the islots of inode and get the corresponding islots
-              of the parent custom_node.
-          A.2. Assign the inputs to custom_node._islot_to_itensor
         B. Add inode to the queue
         
-      * Start BFS loop:
-          C. Pop node from the queue. Set visited[node_label] to True
+      * Start main BFS loop:
+          B. Pop node from the queue. Set visited[node.label] to True
+
           D. Build the popped node 
             
           * For child_node in node's children:
@@ -359,81 +364,78 @@ class StaticBuilder(Builder):
                 otensors of custom_node. Build the dictionary of results
     """      
     result = None
+    # I THINK THAT IN THIS METHOD ONLY INPUT DICTS SHOULD BE ALLOWED
     if custom_node is not None:
+      try:
+        _input = dict(list(enumerate(inputs)))
+      except TypeError:
+        _input = islot_to_itensor
+#       if not isinstance(inputs, dict):
       result = {}
-      _input = dict(enumerate(inputs)) if inputs is not None else islot_to_itensor
-    
+
     scope_suffix = "" if scope_suffix is None else "_" + scope_suffix
     with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE): 
+      # A.
+      if custom_node is not None:
+        for inner_node_data, islot in custom_node._islot_to_inner_node_islot.inv.items():
+          inode_name, inode_islot = inner_node_data
+          self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
+
       visited = [False for _ in range(self.num_nodes)]
       queue = []
       for cur_inode_name in self.input_nodes:
+        # B.
         cur_inode_label = self.get_label_from_name(cur_inode_name)
-        cur_inode = self.nodes[cur_inode_name]
-        
-        # Stage A
-        if custom_node is not None:
-          for inode_islot in cur_inode._islot_to_itensor:
-            custom_node_islot = custom_node._islot_to_inner_node_islot.inv[(cur_inode_name, inode_islot)]
-            cur_inode._islot_to_itensor[inode_islot] = _input[custom_node_islot]
-        
-        # Stage B
         queue.append(cur_inode_label)
-        
         while queue:
-          # Stage C
+          # C.
           cur_node_label = queue.pop(0)
           visited[cur_node_label] = True
           cur_node = self._label_to_node[cur_node_label]
+
+          # D.
+          cur_node._build()
           
-          # Stage D
-          print("Building node: ", cur_node.label, cur_node.name)
-          # Build the tensorflow graph for this Encoder
-          if custom_node is None:  # CHEAP FIX!
-            cur_node._build()
-          else:
-            cur_node._get_output(islot_to_itensor=_input)
-                    
+          # Update the oslots of the children of cur_node
           for child_label in self.adj_list[cur_node_label]:
-            # Stage E
+            # E.
             child_node = self._label_to_node[child_label]
             child_node._built_parents[cur_node_label] = True
             
-            # Stage F
+            # F.
             oslot = cur_node._child_label_to_oslot[child_label]
             islot = child_node._parent_label_to_islot[cur_node_label]
             
-            # Stage G
+            # G.
+#             print((child_node.name, islot), (cur_node.name, oslot))
+#             print(cur_node.get_outputs()[oslot])
             child_node._islot_to_itensor[islot] = cur_node.get_outputs()[oslot]
             if isinstance(child_node, CustomNode):
               enc_name, enc_islot = child_node._islot_to_inner_node_islot[islot]
               enc = child_node.in_builder.nodes[enc_name]
               enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
             
-            # Stage H
+            # H.
             if isinstance(child_node, OutputNode):
               queue.append(child_node.label)
               continue
             if all(child_node._built_parents.values()):
               queue.append(child_node.label)
           
-          # Stage I
-#           print("custom_node is not None and cur_node.name in self.output_nodes",
-#                 custom_node is not None, cur_node.name in self.output_nodes)
-#           print("cur_node.name, self.output_nodes", cur_node.name, self.output_nodes)
+          # I.
           if custom_node is not None and cur_node.name in self.output_nodes:
             for onode_oslot in cur_node._oslot_to_otensor:
               custom_node_oslot = custom_node._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
               result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
               
-          _input = None
-      
       if custom_node is not None:
 #         print("result.items()", result.items())
         result_as_list = list(zip(*sorted(result.items())))[1]
       else:
         result_as_list = None
-
+      
+#     print("result_as_list", result_as_list)
+#     print("result", result)
     return result_as_list, result
 
   def build(self):

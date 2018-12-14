@@ -148,13 +148,109 @@ class CustomEvolutionSeq(EvolutionSequence):
     self._is_committed = True
     print('END COMMIT')
     
+class LSTMEvolutionSequence(EvolutionSequence):
+  """
+  """
+  def __init__(self,
+               builder,
+               state_sizes,
+               num_inputs=3,
+               name=None,
+               cell_class='lstm',
+               mode='forward',
+               **dirs):
+    """
+    Initialize the LSTMEvolutionSequence
+    """
+    super(LSTMEvolutionSequence, self).__init__(builder,
+                                                state_sizes,
+                                                num_inputs=num_inputs,
+                                                name=name,
+                                                mode=mode)
     
-  def __call__(self):
+    self.cell_class = cell_class = (self.cell_dict[cell_class] if isinstance(cell_class, str) 
+                                    else cell_class) 
+    self.num_units = self.main_output_sizes[0][0]
+    self._update_default_directives(**dirs)
+    
+    # Add the init_inode_names and the init_inode_names -> ev_seq edge
+    if issubclass(cell_class, CustomCell):
+      self.is_custom = True
+      self.cell = cell_class(state_sizes, builder=self.builder)  #pylint: disable=not-callable
+    else:
+      self.is_custom = False
+      self.cell = cell_class(self.num_units)
+    
+    self._declare_init_state()
+
+#     builder.addDirectedLink(self.init_inode_names, self, islot=0)
+#     builder.addDirectedLink(self.init_hidden_state, self, islot=1)
+    
+  def _declare_init_state(self):
     """
+    Declare the initial state of the Evolution Sequence.
+    
+    Uses that the RNNEvolutionSequence has only one evolution input
     """
-    pass
-  
+    builder = self.builder
+    
+    if self.is_custom:
+      self.init_inodes = self.cell.get_init_states(ext_builder=builder)[0]
+      
+#     try:
+#       self.init_inode_names = builder.nodes[self.init_inode_names]
+      for islot, init_node in self.init_inodes.items():
+        builder.addDirectedLink(init_node, self, islot=islot)
+#     except AttributeError:
+    else:
+      hidden_dim = self.main_output_sizes[1][0]
+      init_node0_name = builder.addInput(self.num_units, iclass=NormalInputNode)
+      init_node1_name = builder.addInput(hidden_dim, iclass=NormalInputNode)
+      builder.addDirectedLink(init_node0_name, self, islot=0)
+      builder.addDirectedLink(init_node1_name, self, islot=1)
+      
+      self.init_nodes = [builder.nodes[init_node0_name],
+                         builder.nodes[init_node1_name]]
+      
+  def _update_default_directives(self, **dirs):
+    """
+    Update the default directives
+    """
+    self.directives = {'cell' : 'lstm'}
+    self.directives.update(dirs)
+    
+    self.directives['cell'] = self.cell_dict[self.directives['cell']]
+    
   def _build(self):
     """
+    Build the Evolution Sequence
     """
-    pass
+    sorted_inputs = sorted(self._islot_to_itensor.items())
+    
+    init_state = tf.nn.rnn_cell.LSTMStateTuple(sorted_inputs[0][1], sorted_inputs[1][1])
+    
+    inputs_series = tuple(zip(*sorted_inputs[2:]))[1]
+    if len(inputs_series) == 1:
+      inputs_series = inputs_series[0]
+    else:
+      inputs_series = tf.concat(inputs_series, axis=-1)
+    
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+      cell = tf.nn.rnn_cell.BasicLSTMCell(self.num_units,
+                                          state_is_tuple=True)  #pylint: disable=not-callable
+      
+      print("inputs_series", inputs_series)
+      print("sorted_inputs", sorted_inputs)
+      print("state tuple", init_state)
+      states_series, _ = tf.nn.dynamic_rnn(cell,
+                                           inputs_series,
+                                           initial_state=init_state)
+    
+    self._oslot_to_otensor[0] = tf.identity(states_series, name=self.name)
+    
+    self._is_built = True
+
+  def __call__(self, inputs=None, islot_to_itensor=None):
+    """
+    """
+    raise NotImplementedError("")

@@ -134,7 +134,32 @@ class GDTrainer(Trainer):
       dummy_data = np.zeros([batch_size]+T_sh)
       dataset[key] = dummy_data
     return dataset
-    
+
+  def prepare_datasets(self, dataset):
+    """
+    Splits the dataset dictionary into train, validation and test datasets.
+    """
+    scope = self.name
+    train_dataset = {}
+    valid_dataset = {}
+    test_dataset = {}
+    for key in dataset:
+      d_set, inode = key.split('_')[0], key.split('_')[-1]
+      if d_set == 'train':
+        train_dataset[scope + '/' + inode + ':0'] = dataset[key]
+      elif d_set == 'valid':
+        valid_dataset[scope + '/' + inode + ':0'] = dataset[key]
+      elif d_set == 'test':
+        test_dataset[scope + '/' + inode + ':0'] = dataset[key]
+      else:
+        raise KeyError("The dataset contains the key `{}`. The only allowed "
+                       "prefixes for keys in the dataset are 'train', "
+                       "'valid' and 'test'".format(key))
+    return {'train' : train_dataset,
+            'valid' : valid_dataset, 
+            'test' : test_dataset}
+
+        
   def update(self, sess, dataset, batch_size):
     """
     Perform a single gradient descent update for the variables in this cost.
@@ -227,6 +252,9 @@ class GDTrainer(Trainer):
           c += 1
           fd_dct = self.make_feed_dict(batch_dct)
           reduced += sess.run(ops, feed_dict=batch_dct)[0]
+        if c == 0:
+          raise ValueError("No batches in dataset. Possibly one or more data arrays "
+                           "are empty")
         if reduction == 'mean': return reduced/(self.batch_size*c)
         else: return reduced      
         

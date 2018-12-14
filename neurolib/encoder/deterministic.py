@@ -100,12 +100,6 @@ class DeterministicNNNode(InnerNode):
     else:
       _input = self._islot_to_itensor
     _input = basic_concatenation(_input)
-#     if inputs is not None:
-#       _input = basic_concatenation(inputs)
-#     elif islot_to_itensor is not None:
-#       _input = basic_concatenation(islot_to_itensor)
-#     else:
-#       _input = basic_concatenation(self._islot_to_itensor)
 
     dirs = self.directives
     
@@ -160,6 +154,7 @@ class DeterministicNNNode(InnerNode):
     """
     Build the DeterministicNNNode
     """
+#     print("self._islot_to_itensor", self._islot_to_itensor)
     output = self._get_output(islot_to_itensor=self._islot_to_itensor)
     
     output_name = self.name + '_out'

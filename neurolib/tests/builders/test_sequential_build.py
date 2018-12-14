@@ -108,11 +108,12 @@ class SequentialModelBuilderTest(tf.test.TestCase):
   def test_BuildModel3(self):
     """
     """
-    builder = SequentialBuilder(max_steps=10, scope="Basic")
+    builder = SequentialBuilder(max_steps=10,
+                                scope="Basic")
     
     in1 = builder.addInputSequence(10)
     enc1 = builder.addEvolutionSequence([[3],[3]], 3,
-                                        ev_seq_class='lstm', cell_class='lstm')
+                                        cell_class='lstm')
     enc2 = builder.addInnerSequence(4, num_inputs=2)
     o1 = builder.addOutputSequence()
     

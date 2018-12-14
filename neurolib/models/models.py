@@ -92,7 +92,7 @@ class Model(abc.ABC):
 
   def prepare_datasets(self, dataset):
     """
-    Splits the dataset dictionary into train, validation and test datasets.
+    Split the dataset dictionary into train, validation and test datasets.
     """
     scope = self.main_scope
     train_dataset = {}

@@ -30,9 +30,6 @@ class NormalTriLNode(InnerNode):
   """
   An InnerNode that outputs a sample from a normal distribution with input-
   dependent mean and variance.
-  
-  
-  
   """
   num_expected_outputs = 3
   
@@ -182,15 +179,21 @@ class NormalTriLNode(InnerNode):
   
   def _get_output(self, inputs=None, islot_to_itensor=None):
     """
-    Get a sample from the distribution
+    Get the outputs from the distribution
     
     Args:
-        inputs (tf.Tensor or list of tensors) : 
+        inputs (tf.Tensor or list of tensors or list of list of tensors) : 
         
         islot_to_itensor (dict) :
     """
     if inputs is not None:
-      _input = basic_concatenation(inputs)
+#       print("inputs", inputs)
+      if not isinstance(inputs, list):
+        _input = inputs
+      elif not isinstance(inputs[0], list):
+        _input = basic_concatenation(inputs)
+      else:
+        _input = basic_concatenation(inputs[0])
     else:
       _input = basic_concatenation(islot_to_itensor)
 
@@ -218,8 +221,8 @@ class NormalTriLNode(InnerNode):
     """
     islot_to_itensor = self._islot_to_itensor
     _input = basic_concatenation(islot_to_itensor)
+
     mean, hid_layer = self._get_mean(_input)
-      
     output_chol = self._get_scale_tril(_input, hid_layer)
     if 'output_mean_name' in self.directives:
       mean_name = self.directives['output_mean_name']
@@ -245,6 +248,6 @@ class NormalTriLNode(InnerNode):
     
   def _log_prob(self, ipt):
     """
-    Define the loglikelihood of the distribution
+    Get the loglikelihood of the inputs `ipt` for this distribution
     """    
     return self.dist.log_prob(ipt)

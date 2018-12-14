@@ -141,7 +141,7 @@ class CustomNode(InnerNode):
     if isinstance(enc2, str):
       enc2 = self.in_builder.nodes[enc2]
     
-    self.in_builder.addDirectedLink(enc1, enc2, islot, oslot)
+    self.in_builder.addDirectedLink(enc1, enc2, islot=islot, oslot=oslot)
 
     # Remove the connected islot and oslot from the lists of available ones
 #     self._innernode_to_its_avlble_oslots[enc1.name].remove(oslot)
@@ -168,9 +168,6 @@ class CustomNode(InnerNode):
     """
     Get a sample from the CustomNode
     """
-    if not self._is_built:
-      raise ValueError("Node is not built")
-    
     num_outputs = self.num_expected_outputs
     rslt, rslt_dict = self.in_builder.get_output(inputs, islot_to_itensor, self, name)
     for i in range(num_outputs):
@@ -194,20 +191,25 @@ class CustomNode(InnerNode):
     print('BEGIN COMMIT')
     # Stage A
     assigned_islots = 0
+#     print('self.in_builder.input_nodes ', self.in_builder.input_nodes)
+    self.in_builder.input_nodes = {name : node for name, node in
+                  self.in_builder.input_nodes.items() if not node._built_parents}
+#     print('self.in_builder.input_nodes ', self.in_builder.input_nodes)
+        
+      
     for innernode_name, islot_list in self._innernode_to_its_avlble_islots.items():
       if islot_list:
 #         inode = self.in_builder.nodes[innernode_name]
 #         self.in_builder.input_nodes[inode.name] = inode
         for inode_islot in islot_list:
           if (innernode_name, inode_islot) not in self._islot_to_inner_node_islot.values():
-#             print("(innernode_name, inode_islot)", (innernode_name, inode_islot))
-#             print("self._islot_to_inner_node_islot.items()",
-#                   self._islot_to_inner_node_islot.values())
-            raise ValueError("")
-          assigned_islots += 1
-    if assigned_islots != self.num_expected_inputs:
-      raise ValueError("Mismatch between num_expected_inputs and "
-                       "assigned_islots")
+            raise ValueError("({}, {}) not in "
+                      "self._islot_to_inner_node_islot.values():".format(innernode_name,
+                                                                         inode_islot))
+#           assigned_islots += 1
+#     if assigned_islots != self.num_expected_inputs:
+#       raise ValueError("Mismatch between num_expected_inputs and "
+#                        "assigned_islots")
         
 #     Stage B
     assigned_oslots = 0
@@ -218,27 +220,22 @@ class CustomNode(InnerNode):
 #         inode = self.in_builder.nodes[innernode_name]
 #         self.in_builder.output_nodes[inode.name] = inode
         for inode_oslot in oslot_list:
-#           print("self._oslot_to_inner_node_oslot.values()",
-#                 self._oslot_to_inner_node_oslot.items())
-#           print("(innernode_name, inode_islot)", (innernode_name, inode_oslot))
-#           print("self._islot_to_inner_node_islot.items()",
-#                 self._oslot_to_inner_node_oslot.items())
-#           print("(innernode_name, inode_oslot)", 
-#                 [(innernode_name, inode_oslot) in self._oslot_to_inner_node_oslot.values()])
           if (innernode_name, inode_oslot) not in self._oslot_to_inner_node_oslot.values():
-            raise ValueError("")
-          assigned_oslots += 1
-    if assigned_oslots != self.num_expected_outputs:
-      raise ValueError("Mismatch between num_expected_inputs and "
-                       "assigned_islots")
+            raise ValueError("({}, {}) not in "
+                      "self._islot_to_inner_node_oslot.values():".format(innernode_name,
+                                                                         inode_oslot))
+#           assigned_oslots += 1
+#     if assigned_oslots != self.num_expected_outputs:
+#       raise ValueError("Mismatch between num_expected_outputs and "
+#                        "assigned_oslots")
     
     self._is_committed = True
     print('END COMMIT')
 
-  def __call__(self, inputs=None, itensor_to_islot=None):
+  def __call__(self, inputs=None, islot_to_itensor=None):
     """
     """
-    return self._get_output(inputs, itensor_to_islot)
+    return self._get_output(inputs, islot_to_itensor)
   
   def _build(self):
     """
@@ -260,18 +257,6 @@ class CustomNode(InnerNode):
     output = self._oslot_to_otensor
     self._is_built = True
     print("END CUSTOM BUILD\n")
-#     else:
-#       print("\nBEGIN CUSTOM BUILD")
-#       temp = self._islot_to_itensor # horrible hack to allow calling for a CustomNode
-#       self._islot_to_itensor = islot_to_itensor
-#       
-#       self.in_builder.build()
-#       output = {}
-#       for i in range(num_outputs):
-#         onode_name, oslot = self._oslot_to_inner_node_oslot[i]
-#         onode = self.in_builder.nodes[onode_name]
-#         output[i] = onode.get_outputs()[oslot]
-#       self._islot_to_itensor = temp
 
     return list(zip(*sorted(output.items())))[1]
     
