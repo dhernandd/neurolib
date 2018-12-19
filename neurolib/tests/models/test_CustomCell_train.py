@@ -13,27 +13,24 @@
 # limitations under the License.
 #
 # ==============================================================================
-import os
-from neurolib.encoder.seq_cells import TwoEncodersCell
-from neurolib.builders.sequential_builder import SequentialBuilder
-from neurolib.trainer.gd_trainer import GDTrainer
-os.environ['PATH'] += ':/usr/local/bin'
 import unittest
 
 import numpy as np
 import tensorflow as tf
 
-from neurolib.models.predictor_rnn import PredictorRNN
+from neurolib.encoder.seq_cells import TwoEncodersCell, NormalTriLCell
+from neurolib.builders.sequential_builder import SequentialBuilder
+from neurolib.trainer.gd_trainer import GDTrainer
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 2
 range_from = 0
-range_to = 2
+range_to = 3
 tests_to_run = list(range(range_from, range_to))
 test_to_run = 10
 
-def generate_echo_data(length, echo_step, max_steps):
+def generate_echo_data(length, echo_step, max_steps, withY=True):
   """
   Generate some echo data
   """
@@ -46,14 +43,14 @@ def generate_echo_data(length, echo_step, max_steps):
   
   train_idx = 4*length//(5*max_steps)
   dataset = {'train_inputSeq' : X[:train_idx],
-#               'train_outputSeq' : Y[:train_idx],
-#               'valid_outputSeq' : Y[train_idx:],
-             'valid_inputSeq' : X[train_idx:]
-              }
-
+             'valid_inputSeq' : X[train_idx:]}
+  if not withY:
+    return dataset
+  dataset.update({'train_outputSeq' : Y[:train_idx],
+                  'valid_outputSeq' : Y[train_idx:]})
   return dataset
 
-def generate_echo_data_cat(num_labels, length, echo_step, max_steps):
+def generate_echo_data_cat(num_labels, length, echo_step, max_steps, withY=True):
   """
   Generate some echo categorical data
   """
@@ -67,14 +64,15 @@ def generate_echo_data_cat(num_labels, length, echo_step, max_steps):
 
   train_idx = 4*length//(5*max_steps)
   dataset = {'train_inputSeq' : X[:train_idx],
-#              'train_outputSeq' : Y[:300],
-#              'valid_outputSeq' : Y[300:],
-             'valid_inputSeq' : X[train_idx:]
-             }
-
+             'valid_inputSeq' : X[train_idx:]}
+  if not withY:
+    return dataset
+  
+  dataset.update({'train_outputSeq' : Y[:train_idx],
+                  'valid_outputSeq' : Y[train_idx:]})
   return dataset
 
-class RNNPredictorTrainTest(tf.test.TestCase):
+class CustomCellTrainTest(tf.test.TestCase):
   """
   TODO: Write these in terms of self.Assert...
   """  
@@ -116,7 +114,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     scope = "Main"
     batch_size = 1
     max_steps = 25
-    dataset = generate_echo_data(1000, 3, max_steps)
+    dataset = generate_echo_data(1000, 3, max_steps, withY=False)
     
     builder = SequentialBuilder(max_steps=max_steps,
                                 scope=scope)
@@ -142,6 +140,45 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     dataset = trainer.prepare_datasets(dataset)
     trainer.train(dataset, num_epochs=10)
 
+  @unittest.skipIf(2 not in tests_to_run, "Skipping")
+  def test_train_custom1(self):
+    """
+    Test train Custom NormalTriLCell
+    
+    This test tests a configuration that exemplifies neurolib's capabilities. A
+    CustomCell is defined that consists of a forward stochastic RNN.
+    """
+    scope = "Main"
+    batch_size = 1
+    max_steps = 25
+    dataset = generate_echo_data(1000, 3, max_steps)
+    
+    builder = SequentialBuilder(max_steps=max_steps,
+                                scope=scope)
+    is1 = builder.addInputSequence([[1]], name='inputSeq')
+    ev1 = builder.addEvolutionSequence([[3]],
+                                       num_inputs=2,
+                                       num_outputs=3,
+                                       cell_class=NormalTriLCell,
+                                       o0_name='prediction')
+    inn1 = builder.addInnerSequence([[10]], 1)
+    os1 = builder.addOutputSequence(name='prediction')
+    builder.addDirectedLink(is1, ev1, islot=1)
+    builder.addDirectedLink(ev1, inn1)
+    builder.addDirectedLink(inn1, os1)
+    
+    is0 = builder.addInputSequence([[1]], name='outputSeq')
+    os0 = builder.addOutputSequence(name='response')
+    builder.addDirectedLink(is0, os0)
+    builder.build()
+    
+    cost = ('mse', ('prediction', 'response'))
+    trainer = GDTrainer(builder,
+                        cost,
+                        name=scope,
+                        batch_size=batch_size)
+    dataset = trainer.prepare_datasets(dataset)
+    trainer.train(dataset, num_epochs=10)
     
 if __name__ == '__main__':
   unittest.main(failfast=True) 

@@ -180,7 +180,7 @@ class GDTrainer(Trainer):
     """
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
-
+    
     batch_size = batch_size or self.batch_size or 1
     merged_summaries = self.merge_summaries()
     sess = get_session()

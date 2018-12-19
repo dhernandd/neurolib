@@ -159,7 +159,6 @@ class RNNEvolutionSequence(EvolutionSequence):
     builder = self.builder
     self.init_inodes = []
     try:
-#       self.init_inode_names = self.cell.get_init_states(ext_builder=builder)
       self.init_inode_names = self.cell.init_states
       for islot, name in enumerate(self.init_inode_names):
         init_inode = builder.nodes[name]
@@ -190,7 +189,6 @@ class RNNEvolutionSequence(EvolutionSequence):
     if self.cclass_name == 'lstm':
       init_states = tf.nn.rnn_cell.LSTMStateTuple(init_states[0],
                                                   init_states[1])
-#     print("init_states", init_states)
     return init_states
     
   def _build(self):
@@ -202,7 +200,6 @@ class RNNEvolutionSequence(EvolutionSequence):
       init_states = self.get_init_state_tuple()
       inputs_series = basic_concatenation(self._islot_to_itensor,
                                           start_from=self.num_states)
-#       print("inputs_series", inputs_series)
       states_series, _ = tf.nn.dynamic_rnn(cell,
                                            inputs_series,
                                            initial_state=init_states)
@@ -214,7 +211,6 @@ class RNNEvolutionSequence(EvolutionSequence):
       except TypeError:
         out_name = self.directives['o0' + '_name']
         self._oslot_to_otensor[0] = tf.identity(states_series, name=out_name)
-    
     
     # Get the secondary outputs of the EvolutionSequence from the cell
     if isinstance(cell, CustomCell):

@@ -108,7 +108,6 @@ class CustomNode(InnerNode):
     self._oslot_to_shape[oslot] = node.get_oslot_shape(inode_oslot)
     
   def addInner(self, 
-#                *main_params,
                state_sizes,
                num_inputs=1,
                node_class=DeterministicNNNode,
@@ -119,7 +118,6 @@ class CustomNode(InnerNode):
     """
     node_name = self.in_builder.addInner(state_sizes,
                                          num_inputs=num_inputs,
-#                                          *main_params,
                                          node_class=node_class,
                                          is_sequence=False,
                                          name=name,
@@ -190,7 +188,7 @@ class CustomNode(InnerNode):
     """
     print('BEGIN COMMIT')
     # Stage A
-    assigned_islots = 0
+#     assigned_islots = 0
 #     print('self.in_builder.input_nodes ', self.in_builder.input_nodes)
     self.in_builder.input_nodes = {name : node for name, node in
                   self.in_builder.input_nodes.items() if not node._built_parents}
@@ -212,7 +210,7 @@ class CustomNode(InnerNode):
 #                        "assigned_islots")
         
 #     Stage B
-    assigned_oslots = 0
+#     assigned_oslots = 0
 #     print("self._innernode_to_its_avlble_oslots.items()", 
 #           self._innernode_to_its_avlble_oslots.items())
     for innernode_name, oslot_list in self._innernode_to_its_avlble_oslots.items():

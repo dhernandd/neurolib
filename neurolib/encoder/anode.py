@@ -157,7 +157,7 @@ class ANode(abc.ABC):
         D.append(len(osize))
     except TypeError:
       raise TypeError("Failed to define `main_oshapes`")
-
+    
     return main_oshapes, D
     
   def get_islot_shape(self, islot=0):
@@ -165,9 +165,9 @@ class ANode(abc.ABC):
     Return the incoming shape corresponding to this islot.
     
     Args:
-        islo
+        islot (int) : The islot whose
     """
-    return self._oslot_to_shape[islot]
+    return self._islot_to_shape[islot]
 
   def get_oslot_shape(self, oslot=0):
     """

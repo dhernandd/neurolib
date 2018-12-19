@@ -7,7 +7,7 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is distributed on an "AS IS" BASIS,  
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -15,8 +15,6 @@
 # ==============================================================================
 import tensorflow as tf
 
-# from neurolib.encoder.custom import CustomNode
-# from neurolib.encoder.deterministic import DeterministicNNNode
 from neurolib.encoder.input import NormalInputNode
 from neurolib.encoder.anode import ANode
 from neurolib.builders.static_builder import StaticBuilder
@@ -45,7 +43,7 @@ class CustomCell(ANode, tf.nn.rnn_cell.RNNCell):
     self.num_expected_inputs = num_inputs
     self.num_expected_outputs = num_outputs
     
-  def get_init_states(self, ext_builder):
+  def _get_init_states(self):
     """
     """
     raise NotImplementedError
@@ -71,7 +69,7 @@ class CustomCell(ANode, tf.nn.rnn_cell.RNNCell):
 
 class TwoEncodersCell(CustomCell):
   """
-  A CustomCell with 2 encoders
+  A CustomCell with 2 inner states, each evolved by means of a deterministic RNN.
   """
   def __init__(self,
                state_sizes,
@@ -81,13 +79,26 @@ class TwoEncodersCell(CustomCell):
                name=None,
                **dirs):
     """
+    Initialize the TwoEncodersCell
+    
+    Args:
+        state_sizes (list of list of ints):
+        
+        builder :
+               
+        num_inputs :
+
+        num_outputs :
+  
+        name :
+        
+        dirs :
     """
     super(TwoEncodersCell, self).__init__(num_inputs=num_inputs,
                                           num_outputs=num_outputs,
                                           builder=builder)
     self.state_dims = tuple(state_sizes)
     self.cname = 'TwoEncCell' if name is None else name
-    self.init_states = None
 
     self._update_directives(**dirs)
 
@@ -116,23 +127,28 @@ class TwoEncodersCell(CustomCell):
     
   def declare_cell_encoder(self):
     """
+    Declare the cell inner encoder
     """
     builder = self.builder
+    num_inputs = self.num_expected_inputs
+    num_outputs = self.num_expected_outputs
     
-    cust = builder.createCustomNode(3, 2, name="Custom")
+    cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom")
     cust_in1 = cust.addInner(self.state_size[0:1], num_inputs=2)
     cust_in2 = cust.addInner(self.state_size[1:2], num_inputs=2)
     cust.addDirectedLink(cust_in1, cust_in2, islot=1)
+
     cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
     cust.declareIslot(islot=1, innernode_name=cust_in2, inode_islot=0)
     cust.declareIslot(islot=2, innernode_name=cust_in1, inode_islot=1)
+
     cust.declareOslot(oslot=0, innernode_name=cust_in1, inode_oslot=0)
     cust.declareOslot(oslot=1, innernode_name=cust_in2, inode_oslot=0)
     cust.commit()
     
     return cust
     
-  def __call__(self, inputs, state):
+  def __call__(self, inputs, state,  scope=None):
     """
     Evaluate the cell encoder on a set of inputs    
     """
@@ -142,7 +158,6 @@ class TwoEncodersCell(CustomCell):
     except TypeError:
       num_init_states = 1
       state = (state,)
-#     print("num_init_states", num_init_states)
     
     islot_states = dict(enumerate(state))
     try:
@@ -152,15 +167,15 @@ class TwoEncodersCell(CustomCell):
       islot_states.update({num_init_states : inputs})
       inputs = islot_states
       
-#     print("inputs", inputs)
     output, _ = self.encoder(islot_to_itensor=inputs)
-#     print("outputs", output)
+
     return (output, output)
-#     return (output, output)
 
   def _get_init_states(self):
     """
-    The init_states are returned as a list indexed by islot. DOCUMENT!
+    Get the init states of the cell (which will become the init_states of the EvolutionSequence)
+    
+    The init_states are returned as a list indexed by islot.
     """
     init1 = self.ext_builder.addInput(self.state_dims[:1],
                                  iclass=NormalInputNode)
@@ -173,24 +188,33 @@ class TwoEncodersCell(CustomCell):
     
 class NormalTriLCell(CustomCell):
   """
-  A CustomCell that 
+  A CustomCell with 1 inner state, evolved by means of a stochastic normal RNN. 
   """
   def __init__(self,
                state_sizes,
+               builder,
                num_inputs=2,
                name=None,
                **dirs):
     """
+    Initialize the NormalTriLCell.
     """
     super(NormalTriLCell, self).__init__(num_inputs=num_inputs,
-                                         num_outputs=1,
-                                         builder=None)
-    self.state_dims = state_sizes
-    self.name = 'NormalTriLCell' if name is None else name
+                                         num_outputs=3,
+                                         builder=builder)
+    try:
+      self.state_dims = state_sizes
+    except TypeError:
+      self.state_dims = [[state_sizes]]
+      
+    self.cname = 'NormalTriLCell' if name is None else name
 
     self._update_directives(**dirs)
 
     self.encoder = self.declare_cell_encoder()
+    
+    self.init_states = self._get_init_states()
+    
 
   def _update_directives(self, **dirs):
     """
@@ -202,6 +226,7 @@ class NormalTriLCell(CustomCell):
   @property
   def state_size(self):
     """
+    Get the states dimensions
     """
     return self.state_dims
   
@@ -213,20 +238,47 @@ class NormalTriLCell(CustomCell):
   
   def declare_cell_encoder(self):
     """
+    Declare the cell inner encoder.
     """
-    enc_name = self.builder.addInner(self.state_dims,
-                                     num_inputs=2,
-                                     node_class=NormalTriLNode,
-                                     name='NormalTriLCell')
-    return self.builder.nodes[enc_name]
+    builder = self.builder
+    num_inputs = self.num_expected_inputs
+    num_outputs = self.num_expected_outputs
+    
+    cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom")
+    enc_name = cust.addInner(list(self.state_dims),
+                             num_inputs=num_inputs,
+                             node_class=NormalTriLNode,
+                             name='NormalTriLCell')
+    
+    cust.declareIslot(islot=0, innernode_name=enc_name, inode_islot=0)
+    cust.declareIslot(islot=1, innernode_name=enc_name, inode_islot=1)
+    cust.declareOslot(oslot=0, innernode_name=enc_name, inode_oslot=0)
+    cust.declareOslot(oslot=1, innernode_name=enc_name, inode_oslot=1)
+    cust.declareOslot(oslot=2, innernode_name=enc_name, inode_oslot=2)
+    cust.commit()
+
+    return cust 
   
-  def __call__(self, inputs=None, islot_to_itensor=None):
+  def __call__(self, inputs, state, scope=None):
     """
     Evaluate the cell encoder on a set of inputs
     """
-#     print("inputs1", inputs)
-    output = self.encoder(inputs, islot_to_itensor)
-    return (output, output)
+    try:
+      num_init_states = len(state)
+    except TypeError:
+      num_init_states = 1
+      state = (state, )
+    
+    islot_states = dict(enumerate(state))
+    try:
+      islot_states.update(dict(enumerate(inputs, num_init_states)))
+      inputs = islot_states
+    except TypeError:
+      islot_states.update({num_init_states : inputs})
+      inputs = islot_states
+      
+    output, _ = self.encoder(islot_to_itensor=inputs)
+    return (output, output[0])
     
   def on_linked_as_node_2(self, islot):
     """
@@ -236,9 +288,12 @@ class NormalTriLCell(CustomCell):
         raise ValueError("Input dimension of BasicCustomCell in islot 0"
                          "must equal self.num_features")
         
-  def get_init_states(self, ext_builder):
+  def _get_init_states(self):
     """
+    Get the init states of the cell (which will become the init_states of the EvolutionSequence)
+    
+    The init_states are returned as a list indexed by islot.
     """
-    return [ext_builder.addInput(self.state_dims,
-                                 iclass=NormalInputNode,
-                                 **self.directives)]
+    return [self.ext_builder.addInput(self.state_dims,
+                                      iclass=NormalInputNode,
+                                      **self.directives)]

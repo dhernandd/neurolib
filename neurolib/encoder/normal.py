@@ -62,7 +62,7 @@ class NormalTriLNode(InnerNode):
     self.num_expected_inputs = num_inputs
     self.main_output_sizes = self.get_output_sizes(state_sizes)
     self.main_oshape, self.D = self.get_main_oshapes() 
-    self._oslot_to_shape[0] = self.main_oshape
+    self._oslot_to_shape[0] = self.main_oshape[0]
     
     self.name = "NormalTril_" + str(self.label) if name is None else name
 
@@ -96,7 +96,6 @@ class NormalTriLNode(InnerNode):
     Declare outputs for the statistics of the distribution (mean and standard
     deviation)
     """
-#     main_oshape = self._oslot_to_shape[0]
     main_oshape = self.main_output_sizes[0]
     osize = main_oshape[0]
     
@@ -106,7 +105,8 @@ class NormalTriLNode(InnerNode):
     self.builder.addDirectedLink(self, o1, oslot=1)
     
     # Stddev oslot
-    self._oslot_to_shape[2] = main_oshape.append(osize)
+#     self._oslot_to_shape[2] = main_oshape.append(osize)
+    self._oslot_to_shape[2] = main_oshape + [osize]
     o2 = self.builder.addOutput(name=self.directives['output_cholesky_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
     
@@ -125,8 +125,6 @@ class NormalTriLNode(InnerNode):
     scope_suffix = ("_mean" if scope_suffix is None 
                             else "_" + scope_suffix + "_mean")
 
-    
-#     output_dim = self._oslot_to_shape[0][-1]
     output_dim = self.main_output_sizes[0][-1]
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       # Define the Means
@@ -157,7 +155,6 @@ class NormalTriLNode(InnerNode):
     scope_suffix = ("_scale" if scope_suffix is None 
                               else "_" + scope_suffix + "_scale")
 
-#     output_dim = self._oslot_to_shape[0][-1]
     output_dim = self.main_output_sizes[0][-1]
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       if dirs['share_params']:
