@@ -99,7 +99,7 @@ class Model(abc.ABC):
     valid_dataset = {}
     test_dataset = {}
     for key in dataset:
-      d_set, inode = key.split('_')[0], key.split('_')[-1]
+      d_set, inode = key.split('_')[0], "_".join(key.split('_')[1:])
       if d_set == 'train':
         train_dataset[scope + '/' + inode + ':0'] = dataset[key]
       elif d_set == 'valid':

@@ -19,6 +19,7 @@ from neurolib.encoder.input import NormalInputNode
 from neurolib.encoder.anode import ANode
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.normal import NormalTriLNode
+from tensorflow.python.framework.tensor_shape import TensorShape  #pylint: disable=no-name-in-module
 
 
 # pylint: disable=bad-indentation, no-member, protected-access
@@ -35,10 +36,15 @@ class CustomCell(ANode, tf.nn.rnn_cell.RNNCell):
     """
     Initialize the CustomCell
     """
+    self.is_sequence = False
+    self.builder = StaticBuilder(scope='Cell')
+    self.batch_size = self.builder.batch_size
+    self.max_steps = None
+#     self.cell_output = 0
+    
     super(CustomCell, self).__init__()
     self.ext_builder = builder
 
-    self.builder = StaticBuilder(scope='Cell')
 
     self.num_expected_inputs = num_inputs
     self.num_expected_outputs = num_outputs
@@ -97,7 +103,10 @@ class TwoEncodersCell(CustomCell):
     super(TwoEncodersCell, self).__init__(num_inputs=num_inputs,
                                           num_outputs=num_outputs,
                                           builder=builder)
+    self.main_output_sizes = state_sizes
     self.state_dims = tuple(state_sizes)
+    self.secondary_output_slots = []
+        
     self.cname = 'TwoEncCell' if name is None else name
 
     self._update_directives(**dirs)
@@ -202,10 +211,14 @@ class NormalTriLCell(CustomCell):
     super(NormalTriLCell, self).__init__(num_inputs=num_inputs,
                                          num_outputs=3,
                                          builder=builder)
-    try:
-      self.state_dims = state_sizes
-    except TypeError:
+    if isinstance(state_sizes, int):
       self.state_dims = [[state_sizes]]
+    else:
+      self.state_dims = state_sizes
+    self.main_output_sizes = self.state_dims
+    self.main_oshape, self.D = self.get_main_oshapes()
+    self._oslot_to_shape[0] = self.main_oshape
+    self._declare_secondary_oshapes()
       
     self.cname = 'NormalTriLCell' if name is None else name
 
@@ -214,27 +227,41 @@ class NormalTriLCell(CustomCell):
     self.encoder = self.declare_cell_encoder()
     
     self.init_states = self._get_init_states()
-    
 
+  def _declare_secondary_oshapes(self):
+    """
+    Declare the cell's secondary output shapes
+    """
+    print("seq_cells; self._oslot_to_shape", self._oslot_to_shape)
+    self.secondary_output_slots = [1, 2]
+    self._oslot_to_shape[1] = self.main_oshape
+    self._oslot_to_shape[2] = self.main_oshape + [self.main_oshape[-1]]
+    
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    self.directives = {}
+    self.directives = {'out_0_name' : 'main0',
+                       'out_1_name' : 'mean',
+                       'out_2_name' : 'scale'}
+    
     self.directives.update(dirs)
     
   @property
   def state_size(self):
     """
-    Get the states dimensions
+    Get self.state_size
     """
     return self.state_dims
   
   @property
   def output_size(self):
     """
+    Set self.output_size
     """
-    return self.state_dims
+    return (TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]*2))
   
   def declare_cell_encoder(self):
     """
@@ -276,9 +303,15 @@ class NormalTriLCell(CustomCell):
     except TypeError:
       islot_states.update({num_init_states : inputs})
       inputs = islot_states
-      
+    
     output, _ = self.encoder(islot_to_itensor=inputs)
-    return (output, output[0])
+    return (output[:], output[0])
+#     
+#   def set_output(self, oslot):
+#     """
+#     Choose which oslot to output in the RNN
+#     """
+#     self.cell_output = oslot
     
   def on_linked_as_node_2(self, islot):
     """

@@ -92,6 +92,7 @@ class DeterministicNNNode(InnerNode):
   
   def _get_output(self, inputs=None, islot_to_itensor=None):
     """
+    Get the node single output
     """
     if inputs is not None:
       _input = inputs
@@ -125,11 +126,6 @@ class DeterministicNNNode(InnerNode):
       raise err
     
     # Build
-#     if islot_to_itensor is None:
-#       islot_to_itensor = self._islot_to_itensor
-#     itensors = list(zip(*sorted(islot_to_itensor.items())))[1] # make sure the inputs are ordered
-#     _input = tf.concat(itensors, axis=-1)
-#     output_dim = self._oslot_to_shape[0][-1]
     output_dim = self.main_output_sizes[0][0]
     if num_layers == 1:
       output = layers[0](_input, output_dim, activation_fn=activations[0])

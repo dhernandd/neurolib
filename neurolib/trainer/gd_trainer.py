@@ -70,9 +70,11 @@ class GDTrainer(Trainer):
     self.nodes = builder.nodes
     self.batch_size = batch_size
     self.name = name
+    
     self.cost = cost
     self.cost_name = cost[0]
     self.cost_inputs = cost[1]
+    
     self.rslt_dir = rslt_dir
     self._update_default_directives(**dirs)
     
@@ -129,9 +131,9 @@ class GDTrainer(Trainer):
     _, data = get_keys_and_data(dataset)
     batch_size = data[0].shape[0]
     for key in self.builder.dummies:
-      T = tf.get_default_graph().get_tensor_by_name(key)
-      T_sh = T.shape.as_list()[1:]
-      dummy_data = np.zeros([batch_size]+T_sh)
+#       T = tf.get_default_graph().get_tensor_by_name(key)
+#       T_sh = T.shape.as_list()[1:]
+      dummy_data = np.zeros([batch_size] + self.builder.dummies[key][1:])
       dataset[key] = dummy_data
     return dataset
 

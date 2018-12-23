@@ -13,6 +13,8 @@
 # limitations under the License.
 #
 # ==============================================================================
+
+import numpy as np
 import tensorflow as tf
 
 from neurolib.builders.builder import Builder
@@ -23,6 +25,7 @@ from neurolib.encoder.input import PlaceholderInputNode  # @UnusedImport
 from neurolib.encoder.output import OutputNode
 from neurolib.utils.utils import check_name
 from neurolib.encoder.basic import CopyNode
+from neurolib.utils.graphs import get_session
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -79,7 +82,8 @@ class StaticBuilder(Builder):
       batch_size (int or None): The batch size. Defaults to None (unspecified)
     """
     self.custom_encoders = {}
-    self.dummies = set()
+#     self.dummies = set()
+    self.dummies = {}
     self.adj_matrix = None
     self.adj_list = None
 
@@ -442,3 +446,30 @@ class StaticBuilder(Builder):
     """
     """
     self.get_output()
+    
+  def make_dummy_fd(self, batch_size):
+    """
+    """
+    print("st_b; self.dummies.items()", self.dummies.items())
+    return {key : np.zeros([batch_size] + value[1:]) for key, value in self.dummies.items()}
+    
+  def eval(self, node, feed_dict, oslot=0, lmbda=None):
+    """
+    """
+    otensor = self.nodes[node].get_outputs()[oslot]
+    
+    batch_size = list(feed_dict.values())[0].shape[0]
+#     print("st_b; list(feed_dict.values())[0].shape", list(feed_dict.values())[0].shape)
+    dummy_feed = self.make_dummy_fd(batch_size)
+#     print("st_b; dummy_feed", dummy_feed)
+    feed_dict.update(dummy_feed)
+    
+#     print("st_b; feed_dict", feed_dict)
+    sess = get_session()
+    sess.run(tf.global_variables_initializer())
+    if lmbda is not None:
+      rslt = sess.run(lmbda(otensor), feed_dict=feed_dict)
+    else:
+      rslt = sess.run(otensor, feed_dict=feed_dict)
+    return rslt
+    

@@ -15,11 +15,12 @@
 # ==============================================================================
 from abc import abstractmethod
 
+import numpy as np
 import tensorflow as tf
 
 from neurolib.encoder.basic import InnerNode
 from neurolib.encoder.input import NormalInputNode
-from neurolib.encoder.seq_cells import CustomCell
+from neurolib.encoder.seq_cells import CustomCell, NormalTriLCell
 from neurolib.utils.utils import basic_concatenation
 
 # pylint: disable=bad-indentation, no-member, protected-access
@@ -42,24 +43,26 @@ class EvolutionSequence(InnerNode):
                state_sizes,
                num_inputs=2,
                num_outputs=1,
-               name=None,
+#                name=None,
                mode='forward'):
     """
     Initialize an EvolutionSequence
     """
     super(EvolutionSequence, self).__init__(builder,
                                             is_sequence=True)
-    self.name = 'EvSeq_' + str(self.label) if name is None else name    
+#     self.name = 'EvSeq_' + str(self.label) if name is None else name    
 
     self.main_output_sizes = self.get_output_sizes(state_sizes)
-    self.main_oshapes = self.get_main_oshapes()
+    self.main_oshapes, self.D = self.get_main_oshapes()
     for oslot, shape in enumerate(self.main_oshapes):
+      print("oslot, shape", oslot, shape)
       self._oslot_to_shape[oslot] = shape
     
     self.num_expected_outputs = num_outputs
     self.num_expected_inputs = num_inputs
     self.num_states = len(self.main_output_sizes)
     self.num_input_seqs = self.num_expected_inputs - self.num_states
+    
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
@@ -82,21 +85,31 @@ class RNNEvolutionSequence(EvolutionSequence):
   def __init__(self,
                builder,
                state_sizes,
-               num_inputs=2,
-               num_outputs=1,
-               name=None,
-               cell_class='basic',
+#                num_inputs=2,
+#                num_outputs=1,
+#                cell_class='basic',
+#                name=None,
                **dirs):
     """
     Initialize the RNNEvolutionSequence
     """
+    try:
+      num_inputs = dirs.pop('num_inputs')
+    except KeyError:
+      raise KeyError("Missing argument `num_inputs`")
+    num_outputs = dirs.pop('num_outputs', 1)
+
     super(RNNEvolutionSequence, self).__init__(builder,
-                                                    state_sizes,
-                                                    num_inputs=num_inputs,
-                                                    num_outputs=num_outputs,
-                                                    name=name,
-                                                    mode='forward')
+                                               state_sizes,
+                                               num_inputs=num_inputs,
+                                               num_outputs=num_outputs,
+#                                                name=name,
+                                               mode='forward')
+    if not hasattr(self, 'name'):
+      self.name = dirs.pop('name', 'RNN_' + str(self.label))
+
     # Get cell_class and cell
+    cell_class = dirs.pop('cell_class', 'basic')
     if isinstance(cell_class, str):
       self.cclass_name = cell_class
       self._check_dims_default_rnns(cell_class)
@@ -108,6 +121,7 @@ class RNNEvolutionSequence(EvolutionSequence):
     if issubclass(cell_class, CustomCell): 
       self.cell = cell_class(state_sizes,
                              builder=self.builder)  #pylint: disable=not-callable
+      self._declare_secondary_outputs()
     else:
       osize = self.main_output_sizes[0][0]
       self.cell = cell_class(osize)
@@ -127,7 +141,18 @@ class RNNEvolutionSequence(EvolutionSequence):
       self.cclass_name = 'basic'
     else:
       self.cclass_name = None
-    
+  
+  def _declare_secondary_outputs(self):
+    """
+    Declare secondary output nodes and link them
+    """
+    for oslot in self.cell.secondary_output_slots:
+      oname = self.get_output_tensor_name(oslot)
+      self._oslot_to_shape[oslot] = self.cell._oslot_to_shape[oslot][:].insert(1, self.max_steps)
+      o = self.builder.addOutputSequence(name="Out_" + str(oslot) + '_' + oname)
+      print("oslot", oslot)
+      self.builder.addDirectedLink(self, o, oslot=oslot)
+      
   def _check_dims_default_rnns(self, cclass):
     """
     Check the EvolutionSequence dimension attributes for tensorflow RNNs
@@ -174,7 +199,7 @@ class RNNEvolutionSequence(EvolutionSequence):
     """
     Update the default directives
     """
-    self.directives = {'o'+str(i)+'_name' : self.name + '_' + str(i) 
+    self.directives = {'out_' + str(i) + '_name' : self.name + '_' + str(i) 
                        for i in range(self.num_expected_outputs)}
     self.directives.update(dirs)
   
@@ -201,35 +226,108 @@ class RNNEvolutionSequence(EvolutionSequence):
       inputs_series = basic_concatenation(self._islot_to_itensor,
                                           start_from=self.num_states)
       states_series, _ = tf.nn.dynamic_rnn(cell,
-                                           inputs_series,
-                                           initial_state=init_states)
-    
+                                        inputs_series,
+                                        initial_state=init_states)
+      print("ev_seq; states_series", states_series)
       try:
         for oslot, state in enumerate(states_series):
-          out_name = self.directives['o' + str(oslot) + '_name']
-          self._oslot_to_otensor[oslot] = tf.identity(state[0], name=out_name)
+#           print("ev_seq; oslot, state", oslot, state)
+          out_name = self.get_output_tensor_name(oslot)
+          self._oslot_to_otensor[oslot] = tf.identity(state, name=out_name)
       except TypeError:
-        out_name = self.directives['o0' + '_name']
+        out_name = self.directives['out_0' + '_name']
         self._oslot_to_otensor[0] = tf.identity(states_series, name=out_name)
-    
-    # Get the secondary outputs of the EvolutionSequence from the cell
-    if isinstance(cell, CustomCell):
-      self.fill_oslot_to_otensor()
-      
+          
     self._is_built = True
 
+  def get_output_tensor_name(self, oslot):
+    """
+    Get the name of the output tensor corresponding to an oslot, based on the
+    underlying Cell
+    """
+    try:
+      return self.cell.directives['out_' + str(oslot) + '_name']
+    except KeyError:
+      return self.directives['out_' + str(oslot) + '_name']
+    
+  def __call__(self, inputs=None, islot_to_itensor=None):
+    """
+    TODO:
+    """
+    raise NotImplementedError("")
+
+
+class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
+  """
+  """
+#   def __init__(self,
+#                builder,
+#                state_sizes,
+#                num_inputs=2,
+#                name=None,
+#                **dirs):
+  def __init__(self,
+               builder,
+               state_sizes,
+               **dirs):
+    """
+    Initialize the NonlinearDynamicswGaussianNoise EvolutionSequence
+    """
+    self.name = dirs.pop('name', 'NLDS_wGnoise')
+#     dirs['num_outputs'] = 3
+#     dirs['cell_class'] = NormalTriLCell
+    print("dirs", dirs)
+    super(NonlinearDynamicswGaussianNoise, self).__init__(builder,
+                                                          state_sizes,
+#                                                           num_inputs=num_inputs,
+#                                                           name=name,
+                                                          num_outputs=3,
+                                                          cell_class=NormalTriLCell,
+                                                          **dirs)
+    self.state_dim = self.main_output_sizes[0][0]
+    
+  def log_prob(self, Y):
+    """
+    Return the log_probability for the NonlinearDynamicswGaussianNoise
+    """
+    assert self._is_built, ("`self._is_built == False. "
+                            "Method `log_prob` can only be accessed once the "
+                            "node is built")
+    means = self._oslot_to_otensor[1]
+    means, Y = tf.expand_dims(means, -1), tf.expand_dims(Y, -1)
+    scales = self._oslot_to_otensor[2]
+    covs = tf.matmul(scales, scales, transpose_b=True)
+    T = self.max_steps
+    D = self.state_dim
+    
+    t1 = np.log(np.pi)*T*D
+#     t2 = 0.5*tf.reduce_sum(tf.log(tf.linalg.det(scales)**2), axis=1)
+    t2 = 0.5*tf.reduce_sum(tf.log(tf.linalg.det(covs)), axis=1)
+    t3 = -0.5*tf.reduce_sum(tf.multiply(tf.linalg.triangular_solve(scales, (Y - means)),
+                                        tf.linalg.triangular_solve(scales, (Y - means))))
+    
+    return t1 + t2 + t3
+    
+  def entropy(self):
+    """
+    Return the entropy of the NonlinearDynamicswGaussianNoise
+    """
+    assert self._is_built, ("`self._is_built == False. "
+                            "Method `entropy` can only be accessed once the "
+                            "node is built")
+    scales = self._oslot_to_otensor[2]
+#     print(scales)
+#     print(tf.linalg.det(scales))
+    covs = tf.matmul(scales, scales, transpose_b=True)
+#     return 0.5*tf.reduce_sum(tf.log(tf.linalg.det(scales)**2), axis=1)
+    return 0.5*tf.reduce_sum(tf.log(tf.linalg.det(covs)), axis=1)
+    
   def __call__(self, inputs=None, islot_to_itensor=None):
     """
     """
     raise NotImplementedError("")
-  
-  def fill_oslot_to_otensor(self):
-    """
-    """
-    pass
 
-
-
+    
 class LinearNoisyDynamicsEvSeq(EvolutionSequence):
   """
   """
@@ -273,14 +371,12 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
     """
     sorted_inputs = sorted(self._islot_to_itensor.items())
     
-#     print("sorted_inputs", sorted_inputs)
     init_state = sorted_inputs[0][1]
     inputs_series = tuple(zip(*sorted_inputs[1:]))[1]
     if len(inputs_series) == 1:
       inputs_series = inputs_series[0]
     else:
       inputs_series = tf.concat(inputs_series, axis=-1)
-#     print("self.state_size", self.state_size)
     
     rnn_cell = self.directives['cell']
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
@@ -289,7 +385,6 @@ class LinearNoisyDynamicsEvSeq(EvolutionSequence):
       states_series, _ = tf.nn.dynamic_rnn(cell,
                                            inputs_series,
                                            initial_state=init_state)
-#       print("states_series", states_series)
     
     for oslot, states in enumerate(states_series):
       self._oslot_to_otensor[oslot] = tf.identity(states, name=self.name + str(oslot))

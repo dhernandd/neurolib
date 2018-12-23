@@ -14,7 +14,7 @@
 #
 # ==============================================================================
 from neurolib.encoder.input import NormalInputNode
-from neurolib.encoder.seq_cells import BasicNormalTriLCell
+from neurolib.encoder.seq_cells import NormalTriLCell
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -39,7 +39,7 @@ def are_seq_and_cell_compatible(seq_class, cell_class):
   """
   """
   compatibilities = {'basic' : ['basic',
-                                BasicNormalTriLCell],
+                                NormalTriLCell],
                      'lstm' : ['lstm']}
   if seq_class in compatibilities and cell_class not in compatibilities[seq_class]:
     raise ValueError("seq_class and cell class not compatible")

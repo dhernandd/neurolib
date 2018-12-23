@@ -14,15 +14,13 @@
 #
 # ==============================================================================
 from neurolib.encoder.evolution_sequence import (RNNEvolutionSequence, 
-                                                 CustomEvolutionSequence)
+                                                 CustomEvolutionSequence,
+                                                 NonlinearDynamicswGaussianNoise)
 from neurolib.utils.utils import check_name
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.input import PlaceholderInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
-
-sequence_dict = {'rnn' : RNNEvolutionSequence,
-                 'custom' : CustomEvolutionSequence}
 
 class SequentialBuilder(StaticBuilder):
   """
@@ -60,6 +58,9 @@ class SequentialBuilder(StaticBuilder):
     The 2 input nodes define placeholders for the features and response data
   
   """
+  ev_seq_dict = {'rnn' : RNNEvolutionSequence,
+                 'custom' : CustomEvolutionSequence,
+                 'NLDSwGnoise' : NonlinearDynamicswGaussianNoise}
   def __init__(self,
                max_steps,
                scope,
@@ -124,27 +125,26 @@ class SequentialBuilder(StaticBuilder):
                          name=name,
                          **dirs)
   
+#   def addEvolutionSequence(self,
+#                            state_sizes,
+#                            num_inputs=1,
+#                            num_outputs=1,
+#                            mode='forward',
+#                            ev_seq_class='rnn',
+#                            cell_class='basic', 
+#                            name=None,
+#                            **dirs):
   def addEvolutionSequence(self,
-                           state_sizes, 
-                           num_inputs,
-                           num_outputs=1,
-                           mode='forward',
-                           ev_seq_class='rnn',
-                           cell_class='basic', 
-                           name=None,
+                           state_sizes,
                            **dirs):
     """
     Add an EvolutionSequence
     """
+    ev_seq_class = dirs.pop('ev_seq_class', 'rnn')
     if isinstance(ev_seq_class, str):
-      ev_seq_class = sequence_dict[ev_seq_class]
+      ev_seq_class = self.ev_seq_dict[ev_seq_class]
     node = ev_seq_class(self,
                         state_sizes,
-                        num_inputs=num_inputs,
-                        num_outputs=num_outputs,
-                        name=name,
-                        mode=mode,
-                        cell_class=cell_class,
                         **dirs)
     name = node.name
     self.nodes[name] = node
