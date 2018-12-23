@@ -39,7 +39,7 @@ class VAETestBuild(tf.test.TestCase):
     """
     print("\nTest 0: VAE initialization")
     VariationalAutoEncoder(input_dim=3,
-                           output_dim=10,
+                           state_dim=10,
                            batch_size=1)
     
   def test_build(self):
@@ -47,7 +47,7 @@ class VAETestBuild(tf.test.TestCase):
     """
     print("\nTest 1: VAE build")
     dc = VariationalAutoEncoder(input_dim=3,
-                                output_dim=10,
+                                state_dim=10,
                                 batch_size=1)
     dc.build()
 

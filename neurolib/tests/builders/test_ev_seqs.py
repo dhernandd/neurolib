@@ -81,7 +81,8 @@ class EvolutionSequenceTest(tf.test.TestCase):
     builder.addDirectedLink(is1, evs1, islot=1)
     builder.addDirectedLink(evs1, os1)
     
-    Z = tf.placeholder(tf.float32, [None, 25, 2], name='Z')
+    Z = tf.placeholder(tf.float64, [None, 25, 2], name='Z')
+
     builder.build()
     print(builder.nodes)
     evnode = builder.nodes[evs1]

@@ -88,7 +88,8 @@ class VariationalAutoEncoder(Model):
       
       self.builder = builder = StaticBuilder(scope=self._main_scope)
       
-      i1 = builder.addInput(self.state_dim, name='observation_0', **dirs)
+      i1 = builder.addInput(self.state_dim, name='observation', **dirs)
+
       enc1 = builder.addInner(self.input_dim, name='Recognition',
                               node_class=rec_nclass,
                               **dirs)
@@ -108,7 +109,7 @@ class VariationalAutoEncoder(Model):
     builder.build()
     self.nodes = self.builder.nodes
     
-    cost = ('elbo', ('Generative', 'Recognition'))
+    cost = ('elbo', ('Generative', 'Recognition', 'observation'))
     self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,

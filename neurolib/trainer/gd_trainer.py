@@ -185,7 +185,8 @@ class GDTrainer(Trainer):
     
     batch_size = batch_size or self.batch_size or 1
     merged_summaries = self.merge_summaries()
-    sess = get_session()
+#     graph = tf.get_default_graph()
+    sess = tf.Session(graph=tf.get_default_graph())
     sess.run(tf.global_variables_initializer())
     for ep in range(num_epochs):
       if ep == 0:

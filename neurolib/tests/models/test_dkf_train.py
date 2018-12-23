@@ -13,14 +13,16 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os.path
+
+my_path = os.path.abspath(os.path.dirname(__file__))
+
 import unittest
 import pickle
 
 import tensorflow as tf
 
 from neurolib.models.dkf import DeepKalmanFilter
-from tensorflow.contrib.layers.python.layers.layers import fully_connected
-from neurolib.utils.graphs import get_session
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -44,7 +46,7 @@ class DKFTestTrain(tf.test.TestCase):
     print("\nTest 1: DKF build")
 
     dataset = {}
-    fname = 'datadict_gaussianobs2D'
+    fname = my_path + '/datadict_gaussianobs2D'
     with open(fname, 'rb') as f:
       datadict = pickle.load(f)
       Ytrain = datadict['Ytrain']
@@ -57,7 +59,7 @@ class DKFTestTrain(tf.test.TestCase):
                            max_steps=max_steps,
                            state_dims=[[40], [4]])
     dkf.build()
-    dkf.train(dataset)
+    dkf.train(dataset, num_epochs=10)
     
 
 if __name__ == '__main__':

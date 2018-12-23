@@ -191,12 +191,9 @@ class DeepKalmanFilter(Model):
                                           ev_seq_class=NonlinearDynamicswGaussianNoise,
                                           name='Recognition',
                                           **dirs)
-      if self.is_categorical:
-        inn1 = builder.addInnerSequence(self.num_labels, name='generator')
-      else:
-        inn1 = builder.addInnerSequence(self.input_dims[:1],
-                                        node_class=NormalTriLNode,
-                                        name='Generative')
+      inn1 = builder.addInnerSequence(self.input_dims[:1],
+                                      node_class=NormalTriLNode,
+                                      name='Generative')
       os1 = builder.addOutputSequence(name='prediction')
             
       builder.addDirectedLink(is1, evs1, islot=self.num_rnn_state_dims)
@@ -207,15 +204,11 @@ class DeepKalmanFilter(Model):
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
-#     data_type = 'int32' if self.is_categorical else 'float32'
-#     is2 = builder.addInputSequence(self.input_dims, name='outputSeq', dtype=data_type)
-#     os2 = builder.addOutputSequence(name='observation')
-#     builder.addDirectedLink(is2, os2)
     
     builder.build()
     self.nodes = self.builder.nodes
     
-    cost = ('elbo', ('Generative', 'Recognition'))
+    cost = ('elbo', ('Generative', 'Recognition', 'observation_0'))
     self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,

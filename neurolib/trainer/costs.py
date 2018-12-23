@@ -84,7 +84,7 @@ def elbo(node_dict, node_names):
     raise AttributeError("You must define two InnerNodes, named 'Recognition' and "
                          "'Generative', for 'elbo' training")
     
-  nodeY = node_dict['observation_0']
+  nodeY = node_dict[node_names[2]]
   print("costs; nodeY outputs", nodeY.get_outputs())
   Y = nodeY.get_outputs()[0]
   

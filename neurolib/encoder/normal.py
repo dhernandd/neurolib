@@ -244,9 +244,9 @@ class NormalTriLNode(InnerNode):
     """
     return self.dist.log_prob(ipt)
   
-  def entropy(self, ipt):
+  def entropy(self):
     """
     Get the entropy of the inputs `ipt` for this distribution
     """
-    return self.dist.log_prob(ipt)
+    return self.dist.entropy()
   

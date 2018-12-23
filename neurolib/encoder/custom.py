@@ -262,3 +262,23 @@ class CustomNode(InnerNode):
     """
     """
     return self.in_builder.nodes[label]
+  
+  def entropy(self):
+    """
+    Get the CustomNode entropy
+    """
+    try:
+      return self.dist.entropy()
+    except AttributeError:
+      raise AttributeError("No distribution (`dist` attribute) has been "
+                           "associated to this CustomNode")
+
+  def log_prob(self, Y):
+    """
+    Get the CustomNode loglikelihood
+    """
+    try:
+      return self.dist.log_prob(Y)
+    except AttributeError:
+      raise AttributeError("No distribution (`dist` attribute) has been "
+                           "associated to this CustomNode")
