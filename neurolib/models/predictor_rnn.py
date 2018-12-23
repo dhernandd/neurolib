@@ -185,7 +185,7 @@ class PredictorRNN(Model):
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
-    data_type = 'int32' if self.is_categorical else 'float32'
+    data_type = 'int32' if self.is_categorical else 'float64'
     is2 = builder.addInputSequence(self.input_dims, name='outputSeq', dtype=data_type)
     os2 = builder.addOutputSequence(name='observation')
     builder.addDirectedLink(is2, os2)

@@ -17,39 +17,39 @@ import unittest
 
 import tensorflow as tf
 
-from neurolib.models.vae import VariationalAutoEncoder 
+from neurolib.models.dkf import DeepKalmanFilter
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 2
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 2
+range_from = 1
+range_to = 2
+tests_to_run = list(range(range_from, range_to))
 
-class VAETestBuild(tf.test.TestCase):
+class DKFTestBuild(tf.test.TestCase):
   """
-  TODO: Write these in terms of self.Assert...
   """  
   def setUp(self):
     """
     """
     tf.reset_default_graph()
-    
+  
+  @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_init(self):
     """
     """
-    print("\nTest 0: VAE initialization")
-    VariationalAutoEncoder(input_dim=3,
-                           state_dim=10,
-                           batch_size=1)
-    
+    print("\nTest 0: DKF initialization")
+    DeepKalmanFilter(input_dims=[[3]],
+                     state_dims=[[5], [4]])
+  
+  @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_build(self):
     """
     """
-    print("\nTest 1: VAE build")
-    dc = VariationalAutoEncoder(input_dim=3,
-                                state_dim=10,
-                                batch_size=1)
-    dc.build()
+    print("\nTest 1: DKF build")
+    dkf = DeepKalmanFilter(input_dims=[[3]],
+                           state_dims=[[5], [4]])
+    dkf.build()
 
 
 if __name__ == '__main__':

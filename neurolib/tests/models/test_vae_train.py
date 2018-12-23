@@ -48,7 +48,8 @@ class VAETestTrain(tf.test.TestCase):
     dataset = {'train_observation' : y[:80],
                'valid_observation' : y[80:]}
         
-    vae = VariationalAutoEncoder(input_dim=3, output_dim=10)
+    vae = VariationalAutoEncoder(input_dim=3,
+                                 state_dim=10)
     vae.build()
     vae.train(dataset, num_epochs=20)
     

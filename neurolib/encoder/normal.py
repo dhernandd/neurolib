@@ -84,8 +84,8 @@ class NormalTriLNode(InnerNode):
                       'activation' : 'leaky_relu',
                       'net_grow_rate' : 1.0,
                       'share_params' : False,
-                      'output_mean_name' : self.name + '_mean',
-                      'output_cholesky_name' : self.name + '_cholesky'}
+                      'output_mean_name' : self.name + '_' + str(1) + '_mean',
+                      'output_scale_name' : self.name + '_' + str(2) + '_scale'}
     self.directives.update(dirs)
     
     # Deal with directives that map to tensorflow objects hidden from the client
@@ -105,9 +105,8 @@ class NormalTriLNode(InnerNode):
     self.builder.addDirectedLink(self, o1, oslot=1)
     
     # Stddev oslot
-#     self._oslot_to_shape[2] = main_oshape.append(osize)
     self._oslot_to_shape[2] = main_oshape + [osize]
-    o2 = self.builder.addOutput(name=self.directives['output_cholesky_name'])
+    o2 = self.builder.addOutput(name=self.directives['output_scale_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
     
   def _get_mean(self, _input, scope_suffix=None):
@@ -158,7 +157,7 @@ class NormalTriLNode(InnerNode):
     output_dim = self.main_output_sizes[0][-1]
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       if dirs['share_params']:
-        output_chol = fully_connected(hid_layer, output_dim**2, activation_fn=None)
+        scale = fully_connected(hid_layer, output_dim**2, activation_fn=None)
       else:
         hid_layer = fully_connected(_input, num_nodes, activation_fn=activation,
             biases_initializer=tf.random_normal_initializer(stddev=1/np.sqrt(num_nodes)))
@@ -166,13 +165,14 @@ class NormalTriLNode(InnerNode):
           num_nodes = int(num_nodes*net_grow_rate)
           hid_layer = fully_connected(hid_layer, num_nodes, activation_fn=activation,
             biases_initializer=tf.random_normal_initializer(stddev=1/np.sqrt(num_nodes)))
-        output_chol = fully_connected(hid_layer, output_dim**2,
+        scale = fully_connected(hid_layer, output_dim**2,
               activation_fn=None,
               weights_initializer=tf.random_normal_initializer(stddev=1e-4),
               biases_initializer=tf.random_normal_initializer(stddev=1/np.sqrt(output_dim**2)))
-      output_chol = tf.reshape(output_chol, shape=[-1, output_dim, output_dim])
+      scale = tf.reshape(scale, shape=[-1, output_dim, output_dim])
+      scale = tf.matrix_band_part(scale, -1, 0) # Select the lower triangular piece
       
-    return output_chol
+    return scale
   
   def _get_output(self, inputs=None, islot_to_itensor=None):
     """
@@ -195,9 +195,9 @@ class NormalTriLNode(InnerNode):
       _input = basic_concatenation(islot_to_itensor)
 
     mean, hid_layer = self._get_mean(_input)
-    output_chol = self._get_scale_tril(_input, hid_layer)
+    scale = self._get_scale_tril(_input, hid_layer)
     
-    return MultivariateNormalTriL(loc=mean, scale_tril=output_chol).sample()
+    return MultivariateNormalTriL(loc=mean, scale_tril=scale).sample()
       
   def __call__(self, inputs=None, islot_to_itensor=None):
     """
@@ -220,17 +220,12 @@ class NormalTriLNode(InnerNode):
     _input = basic_concatenation(islot_to_itensor)
 
     mean, hid_layer = self._get_mean(_input)
-    output_chol = self._get_scale_tril(_input, hid_layer)
-    if 'output_mean_name' in self.directives:
-      mean_name = self.directives['output_mean_name']
-    else:
-      mean_name = "Mean_" + str(self.label) + '_0'
-    if 'output_cholesky_name' in self.directives:
-      cholesky_name = self.directives['output_cholesky_name']
-    else:
-      cholesky_name = 'CholTril_' + str(self.label) + '_0'
+    scale = self._get_scale_tril(_input, hid_layer)
+
+    mean_name = self.directives['output_mean_name']
+    scale_name = self.directives['output_scale_name']
     
-    cholesky_tril = tf.identity(output_chol, name=cholesky_name)
+    cholesky_tril = tf.identity(scale, name=scale_name)
     
     # Get the tensorflow distribution for this node
     self.dist = MultivariateNormalTriL(loc=mean, scale_tril=cholesky_tril)
@@ -243,8 +238,15 @@ class NormalTriLNode(InnerNode):
     
     self._is_built = True
     
-  def _log_prob(self, ipt):
+  def log_prob(self, ipt):
     """
     Get the loglikelihood of the inputs `ipt` for this distribution
-    """    
+    """
     return self.dist.log_prob(ipt)
+  
+  def entropy(self):
+    """
+    Get the entropy of the inputs `ipt` for this distribution
+    """
+    return self.dist.entropy()
+  

@@ -27,7 +27,7 @@ class VariationalAutoEncoder(Model):
   """
   def __init__(self,
                input_dim=None,
-               output_dim=None,
+               state_dim=None,
                builder=None,
                batch_size=1,
                rslt_dir='rslts/',
@@ -37,7 +37,7 @@ class VariationalAutoEncoder(Model):
     Initialize the static variational autoencoder
     """
     self.input_dim = input_dim
-    self.output_dim = output_dim
+    self.state_dim = state_dim
     self.batch_size = batch_size
     self.rslt_dir = rslt_dir
     self.save = save
@@ -48,8 +48,8 @@ class VariationalAutoEncoder(Model):
     super(VariationalAutoEncoder, self).__init__()
     self.builder = builder
     if builder is None:
-      if input_dim is None or output_dim is None:
-        raise ValueError("input_dim, output_dim are mandatory "
+      if input_dim is None or state_dim is None:
+        raise ValueError("input_dim, state_dim are mandatory "
                          "in the default build")
         
     self._update_default_directives(**dirs)
@@ -88,12 +88,12 @@ class VariationalAutoEncoder(Model):
       
       self.builder = builder = StaticBuilder(scope=self._main_scope)
       
-      enc0 = builder.addInner(self.output_dim, name='Generative',
-                              node_class=gen_nclass,
-                              **dirs)
-      i1 = builder.addInput(self.output_dim, name='observation', **dirs)
+      i1 = builder.addInput(self.state_dim, name='observation', **dirs)
       enc1 = builder.addInner(self.input_dim, name='Recognition',
                               node_class=rec_nclass,
+                              **dirs)
+      enc0 = builder.addInner(self.state_dim, name='Generative',
+                              node_class=gen_nclass,
                               **dirs)
       o1 = builder.addOutput(name='copy')
 
@@ -108,7 +108,7 @@ class VariationalAutoEncoder(Model):
     builder.build()
     self.nodes = self.builder.nodes
     
-    cost = ('elbo', ('Generative', 'Recognition'))
+    cost = ('elbo', ('Generative', 'Recognition', 'observation'))
     self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,

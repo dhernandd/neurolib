@@ -20,7 +20,7 @@ from neurolib.builders.sequential_builder import SequentialBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 9
+NUM_TESTS = 7
 run_up_to_test = 7
 tests_to_run = list(range(run_up_to_test))
 
@@ -46,7 +46,7 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     builder.addInputSequence(10)
-    builder.addEvolutionSequence(3, 2)
+    builder.addEvolutionSequence(3, num_inputs=2)
 
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
   def test_DeclareModel2(self):
@@ -55,7 +55,7 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     builder.addInputSequence(10)
-    builder.addEvolutionSequence(3, 2)
+    builder.addEvolutionSequence(3, num_inputs=2)
     builder.addOutputSequence()
 
   @unittest.skipIf(3 not in tests_to_run, "Skipping")
@@ -65,7 +65,7 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     in1 = builder.addInputSequence(10)
-    enc1 = builder.addEvolutionSequence(3, 2)
+    enc1 = builder.addEvolutionSequence(3, num_inputs=2)
     o1 = builder.addOutputSequence()
     
     print("in1, enc1", in1, enc1)
@@ -79,7 +79,7 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     in1 = builder.addInputSequence(10)
-    enc1 = builder.addEvolutionSequence(3, 2)
+    enc1 = builder.addEvolutionSequence(3, num_inputs=2)
     o1 = builder.addOutputSequence()
     
     builder.addDirectedLink(in1, enc1, islot=1)
@@ -94,8 +94,8 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     in1 = builder.addInputSequence(10)
-    enc1 = builder.addEvolutionSequence(3, 2)
-    enc2 = builder.addEvolutionSequence(4, 2)
+    enc1 = builder.addEvolutionSequence(3, num_inputs=2)
+    enc2 = builder.addEvolutionSequence(4, num_inputs=2)
     o1 = builder.addOutputSequence()
     
     builder.addDirectedLink(in1, enc1, islot=1)
@@ -112,7 +112,8 @@ class SequentialModelBuilderTest(tf.test.TestCase):
                                 scope="Basic")
     
     in1 = builder.addInputSequence(10)
-    enc1 = builder.addEvolutionSequence([[3],[3]], 3,
+    enc1 = builder.addEvolutionSequence([[3],[3]], 
+                                        num_inputs=3,
                                         cell_class='lstm')
     enc2 = builder.addInnerSequence(4, num_inputs=2)
     o1 = builder.addOutputSequence()

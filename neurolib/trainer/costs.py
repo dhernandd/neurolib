@@ -69,7 +69,7 @@ def cross_entropy_with_logits(node_dict, node_names):
                                                       name='cross_entropy')
   return tf.reduce_mean(ce)
 
-def mse_reg(node_dict):
+def mse_reg(node_dict, node_names):
   """
   """
   pass
@@ -84,10 +84,8 @@ def elbo(node_dict, node_names):
     raise AttributeError("You must define two InnerNodes, named 'Recognition' and "
                          "'Generative', for 'elbo' training")
     
-  nodeY = node_dict['observation']
-  
+  nodeY = node_dict[node_names[2]]
+  print("costs; nodeY outputs", nodeY.get_outputs())
   Y = nodeY.get_outputs()[0]
-  rec_dist = node_rec.dist
-  gen_dist = node_gen.dist
   
-  return -( gen_dist.log_prob(Y) + rec_dist.entropy() )
+  return tf.reduce_sum(-node_rec.entropy() - node_gen.log_prob(Y))

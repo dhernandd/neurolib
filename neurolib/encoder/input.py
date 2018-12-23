@@ -41,12 +41,14 @@ class InputNode(ANode):
   num_expected_inputs = 0
   
   dtype_dict = {'float32' : tf.float32,
+                'float64' : tf.float64,
                 'int32' : tf.int32}
 
   def __init__(self,
                builder,
                state_sizes,
-               is_sequence=False):
+               is_sequence=False,
+               **dirs):
     """
     Initialize the InputNode
     
@@ -74,6 +76,9 @@ class InputNode(ANode):
     # Deal with sequences
     self.main_oshapes, self.D = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes[0]
+    
+    # InputNode directives
+    self.dtype = self.dtype_dict[dirs.pop('dtype')]
       
   @abstractmethod
   def _build(self):
@@ -103,6 +108,7 @@ class PlaceholderInputNode(InputNode):
                state_sizes,
                is_sequence=False,
                name=None,
+               dtype='float64',
                **dirs):
     """
     Initialize the PlaceholderInputNode
@@ -124,7 +130,9 @@ class PlaceholderInputNode(InputNode):
     """
     super(PlaceholderInputNode, self).__init__(builder,
                                                state_sizes,
-                                               is_sequence=is_sequence)
+                                               is_sequence=is_sequence,
+                                               dtype=dtype,
+                                               **dirs)
 
     self.name = name or "In_" + str(self.label)
 
@@ -136,7 +144,7 @@ class PlaceholderInputNode(InputNode):
     """
     Update default directives
     """
-    self.directives = {'dtype' : 'float32'}
+    self.directives = {'dtype' : 'float64'}
     self.directives.update(dirs)
     
   def _build(self):
@@ -149,9 +157,9 @@ class PlaceholderInputNode(InputNode):
     
     name = self.name
     out_shape = self.main_oshapes
-    dtype = self.dtype_dict[dirs['dtype']]
+#     dtype = self.dtype_dict[dirs['dtype']]
     for oslot, out_shape in enumerate(self.main_oshapes):
-      self._oslot_to_otensor[oslot] = tf.placeholder(dtype,
+      self._oslot_to_otensor[oslot] = tf.placeholder(self.dtype,
                                                      shape=out_shape,
                                                      name=name)
     self._is_built = True
@@ -202,7 +210,9 @@ class NormalInputNode(InputNode):
     """
     super(NormalInputNode, self).__init__(builder,
                                           state_sizes,
-                                          is_sequence=is_sequence)
+                                          is_sequence=is_sequence,
+                                          dtype='float64',
+                                          **dirs)
     self.name = "Normal_" + str(self.label) if name is None else name
 
     self.free_oslots = list(range(self.num_expected_outputs))
@@ -223,15 +233,20 @@ class NormalInputNode(InputNode):
       raise NotImplementedError("main output with rank > 1 is not implemented "
                                 "for the Normal Input Node. ")
     
-    dummy = tf.placeholder(tf.float32, oshape, self.name + 'dummy')
-    self.builder.dummies.add(dummy.name)
+    if self.batch_size is None:
+      dummy = tf.placeholder(self.dtype, oshape, self.name + '_dummy')
+#       self.builder.dummies.add(dummy.name)
+      self.builder.dummies[dummy.name] = oshape
+    else:
+      dummy = tf.zeros(oshape, self.dtype)
+      
     if self.is_sequence and self.max_steps is None:
-      mean_init = tf.zeros_like(dummy)
-      scale = tf.eye(osize)
+      mean_init = tf.zeros_like(dummy, dtype=self.dtype)
+      scale = tf.eye(osize, dtype=self.dtype)
       scale_init = tf.linalg.LinearOperatorFullMatrix(scale)
     else:
-      mean_init = tf.zeros_like(dummy)
-      scale = tf.eye(osize)
+      mean_init = tf.zeros_like(dummy, dtype=self.dtype)
+      scale = tf.eye(osize, dtype=self.dtype)
       scale_init = tf.linalg.LinearOperatorFullMatrix(scale)
 
     self.directives = {'output_mean_name' : self.name + '_mean',
