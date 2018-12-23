@@ -14,6 +14,7 @@
 #
 # ==============================================================================
 from bidict import bidict
+from collections import defaultdict
 
 from neurolib.encoder.basic import InnerNode
 from neurolib.encoder.deterministic import DeterministicNNNode  # @UnusedImport
@@ -74,7 +75,8 @@ class CustomNode(InnerNode):
 
     self._innernode_to_its_avlble_islots = {}
     self._innernode_to_its_avlble_oslots = {}
-    self._islot_to_inner_node_islot = bidict()
+#     self._islot_to_inner_node_islot = bidict()
+    self._islot_to_inner_node_islot = defaultdict(list)
     self._oslot_to_inner_node_oslot = bidict()
     
     self._is_committed = False
@@ -91,7 +93,8 @@ class CustomNode(InnerNode):
       raise ValueError("Missing argument")
     node = self.in_builder.nodes[innernode_name]
     self.in_builder.input_nodes[innernode_name] = node 
-    self._islot_to_inner_node_islot[islot] = (innernode_name, inode_islot) 
+#     self._islot_to_inner_node_islot[islot] = (innernode_name, inode_islot) 
+    self._islot_to_inner_node_islot[islot].append((innernode_name, inode_islot)) 
   
   def declareOslot(self, oslot=None, innernode_name=None, inode_oslot=None):
     """
@@ -140,10 +143,6 @@ class CustomNode(InnerNode):
       enc2 = self.in_builder.nodes[enc2]
     
     self.in_builder.addDirectedLink(enc1, enc2, islot=islot, oslot=oslot)
-
-    # Remove the connected islot and oslot from the lists of available ones
-#     self._innernode_to_its_avlble_oslots[enc1.name].remove(oslot)
-#     self._innernode_to_its_avlble_islots[enc2.name].remove(islot)
     
   @property
   def dist(self):
@@ -200,7 +199,10 @@ class CustomNode(InnerNode):
 #         inode = self.in_builder.nodes[innernode_name]
 #         self.in_builder.input_nodes[inode.name] = inode
         for inode_islot in islot_list:
-          if (innernode_name, inode_islot) not in self._islot_to_inner_node_islot.values():
+#           print("custom; self._islot_to_inner_node_islot.values()", self._islot_to_inner_node_islot.values())
+          if not any([(innernode_name, inode_islot) in elem for elem
+                      in self._islot_to_inner_node_islot.values()]):
+#           if (innernode_name, inode_islot) not in self._islot_to_inner_node_islot.values():
             raise ValueError("({}, {}) not in "
                       "self._islot_to_inner_node_islot.values():".format(innernode_name,
                                                                          inode_islot))
@@ -220,7 +222,7 @@ class CustomNode(InnerNode):
         for inode_oslot in oslot_list:
           if (innernode_name, inode_oslot) not in self._oslot_to_inner_node_oslot.values():
             raise ValueError("({}, {}) not in "
-                      "self._islot_to_inner_node_oslot.values():".format(innernode_name,
+                      "self._oslot_to_inner_node_oslot.values():".format(innernode_name,
                                                                          inode_oslot))
 #           assigned_oslots += 1
 #     if assigned_oslots != self.num_expected_outputs:

@@ -268,9 +268,11 @@ class TwoEncodersCell2(CustomCell):
     cust_in2 = cust.addInner(self.state_size[1:2], num_inputs=2)
     cust.addDirectedLink(cust_in1, cust_in2, islot=1)
 
+    # These lines are the only difference with TwoEncodersCell above,
+    # namely the CustomCell islot 2 is also an input for
     cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
+    cust.declareIslot(islot=1, innernode_name=cust_in1, inode_islot=1)
     cust.declareIslot(islot=1, innernode_name=cust_in2, inode_islot=0)
-    cust.declareIslot(islot=2, innernode_name=cust_in1, inode_islot=1)
     cust.declareIslot(islot=2, innernode_name=cust_in1, inode_islot=2)
 
     cust.declareOslot(oslot=0, innernode_name=cust_in1, inode_oslot=0)

@@ -85,7 +85,6 @@ def elbo(node_dict, node_names):
                          "'Generative', for 'elbo' training")
     
   nodeY = node_dict[node_names[2]]
-  print("costs; nodeY outputs", nodeY.get_outputs())
   Y = nodeY.get_outputs()[0]
   
   return tf.reduce_sum(-node_rec.entropy() - node_gen.log_prob(Y))

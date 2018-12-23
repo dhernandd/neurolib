@@ -13,7 +13,6 @@
 # limitations under the License.
 #
 # ==============================================================================
-
 import numpy as np
 import tensorflow as tf
 
@@ -381,9 +380,13 @@ class StaticBuilder(Builder):
     with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE): 
       # A.
       if custom_node is not None:
-        for inner_node_data, islot in custom_node._islot_to_inner_node_islot.inv.items():
-          inode_name, inode_islot = inner_node_data
-          self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
+#         for inner_node_data, islot in custom_node._islot_to_inner_node_islot.inv.items():
+#           inode_name, inode_islot = inner_node_data
+#           self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
+        for islot, inner_node_data in custom_node._islot_to_inner_node_islot.items():
+          for inode_name, inode_islot in inner_node_data:
+            self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
+          
 
       visited = [False for _ in range(self.num_nodes)]
       queue = []
@@ -415,9 +418,12 @@ class StaticBuilder(Builder):
 #             print(cur_node.get_outputs()[oslot])
             child_node._islot_to_itensor[islot] = cur_node.get_outputs()[oslot]
             if isinstance(child_node, CustomNode):
-              enc_name, enc_islot = child_node._islot_to_inner_node_islot[islot]
-              enc = child_node.in_builder.nodes[enc_name]
-              enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
+#               enc_name, enc_islot = child_node._islot_to_inner_node_islot[islot]
+#               enc = child_node.in_builder.nodes[enc_name]
+#               enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
+              for enc_name, enc_islot in child_node._islot_to_inner_node_islot[islot]:
+                enc = child_node.in_builder.nodes[enc_name]
+                enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
             
             # H.
             if isinstance(child_node, OutputNode):

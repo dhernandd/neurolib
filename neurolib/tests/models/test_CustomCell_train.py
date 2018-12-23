@@ -18,7 +18,8 @@ import unittest
 import numpy as np
 import tensorflow as tf
 
-from neurolib.encoder.seq_cells import TwoEncodersCell, NormalTriLCell
+from neurolib.encoder.seq_cells import TwoEncodersCell, NormalTriLCell,\
+  TwoEncodersCell2
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
 
@@ -26,8 +27,9 @@ from neurolib.trainer.gd_trainer import GDTrainer
 
 # NUM_TESTS : 2
 range_from = 0
-range_to = 3
-tests_to_run = list(range(range_from, range_to))
+range_to = 4
+# tests_to_run = list(range(range_from, range_to))
+tests_to_run = [1,3]
 test_to_run = 10
 
 def generate_echo_data(length, echo_step, max_steps, withY=True):
@@ -170,6 +172,46 @@ class CustomCellTrainTest(tf.test.TestCase):
     is0 = builder.addInputSequence([[1]], name='outputSeq')
     os0 = builder.addOutputSequence(name='response')
     builder.addDirectedLink(is0, os0)
+    builder.build()
+    
+    cost = ('mse', ('prediction', 'response'))
+    trainer = GDTrainer(builder,
+                        cost,
+                        name=scope,
+                        batch_size=batch_size)
+    dataset = trainer.prepare_datasets(dataset)
+    trainer.train(dataset, num_epochs=10)
+    
+  @unittest.skipIf(3 not in tests_to_run, "Skipping")
+  def test_train_custom2(self):
+    """
+    Test train Custom cell with forward links.
+    
+    This test tests a configuration that exemplifies neurolib's capabilities. A
+    CustomCell is defined consisting of two forward RNNs working in tandem. The
+    second RNN also takes as inputs, the outputs of the first one (See
+    TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
+    function.
+    """
+    scope = "Main"
+    batch_size = 1
+    max_steps = 25
+    dataset = generate_echo_data(1000, 3, max_steps, withY=False)
+    
+    builder = SequentialBuilder(max_steps=max_steps,
+                                scope=scope)
+    is1 = builder.addInputSequence([[1]], name='inputSeq')
+    ev1 = builder.addEvolutionSequence([[3],[3]],
+                                       num_inputs=3,
+                                       num_outputs=2,
+                                       cell_class=TwoEncodersCell2,
+                                       o0_name='prediction',
+                                       o1_name='response')
+    os1 = builder.addOutputSequence(name='prediction')
+    os2 = builder.addOutputSequence(name='response')
+    builder.addDirectedLink(is1, ev1, islot=2)
+    builder.addDirectedLink(ev1, os1)
+    builder.addDirectedLink(ev1, os2, oslot=1)
     builder.build()
     
     cost = ('mse', ('prediction', 'response'))
