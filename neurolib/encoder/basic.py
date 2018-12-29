@@ -55,6 +55,8 @@ class InnerNode(ANode):
     self.max_steps = builder.max_steps if hasattr(builder, 'max_steps') else None
     self.is_sequence = is_sequence
 
+    # Slot names
+    self._oslot_to_name[0] = 'main'
                   
   def __call__(self, inputs=None, islot_to_itensor=None):
     """

@@ -76,6 +76,8 @@ class ANode(abc.ABC):
     self._oslot_to_shape = {}
     self._islot_to_itensor = {}
     self._oslot_to_otensor = {}
+    self._islot_to_name = bidict({})
+    self._oslot_to_name = bidict({})
     
     self._built_parents = {}
     self._child_label_to_oslot = {}

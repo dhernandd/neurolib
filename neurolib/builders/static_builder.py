@@ -150,7 +150,7 @@ class StaticBuilder(Builder):
     
     return name
     
-  def addDirectedLink(self, node1, node2, oslot=0, islot=0):
+  def addDirectedLink(self, node1, node2, oslot=0, islot=0, name=None):
     """
     Add directed links to the Encoder graph. 
     
@@ -259,6 +259,8 @@ class StaticBuilder(Builder):
     node2._parent_label_to_islot[node1.label] = islot
     node2.num_declared_inputs += 1
     node2.free_islots.remove(islot)
+    node2._islot_to_name[islot] = (node1._oslot_to_name[oslot] if name is None
+                                   else name)
 
     # Initialize _built_parents for the child node.
     node2._built_parents[node1.label] = False
