@@ -80,6 +80,9 @@ class Builder(abc.ABC):
       
       dirs (dict): A dictionary of directives for the node
     """
+    if num_inputs < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_inputs))
     if isinstance(node_class, str):
       node_class = innernode_dict[node_class]
     enc_node = node_class(self,

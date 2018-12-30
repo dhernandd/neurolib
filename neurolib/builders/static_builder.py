@@ -81,7 +81,6 @@ class StaticBuilder(Builder):
       batch_size (int or None): The batch size. Defaults to None (unspecified)
     """
     self.custom_encoders = {}
-#     self.dummies = set()
     self.dummies = {}
     self.adj_matrix = None
     self.adj_list = None
@@ -160,7 +159,7 @@ class StaticBuilder(Builder):
     B) Check that the provided oslot for node1 is free. Otherwise, raise an
     exception.
     
-    C) Initialize/Add dimensions the graph representations stored in the
+    C) Initialize/Add dimensions to the graph representations stored in the
     builder. Specifically, the first time a DirectedLink is added an adjacency
     matrix and an adjacency list are created. From then on, the appropriate
     number of dimensions are added to these representations.
@@ -267,6 +266,38 @@ class StaticBuilder(Builder):
     node1.update_when_linked_as_node1()
     node2.update_when_linked_as_node2()
       
+  def addMergeNode(self,
+                   state_size,
+                   nodes,
+                   merge_class=None,
+                   **dirs):
+    """
+    Merge two or more nodes
+    """
+    print("st bld; nodes:", nodes)
+    nodes = [self.nodes[node_name] for node_name in nodes]
+    merger = merge_class(self,
+                         state_size,
+                         nodes,
+                         **dirs)
+    name = merger.name
+    self.nodes[name] = merger    
+    
+    nnodes = self.num_nodes
+    if nnodes > len(self.adj_matrix):
+        l = len(self.adj_matrix)
+        for row in range(l):
+          self.adj_matrix[row].extend([0]*(nnodes-l))
+        for _ in range(nnodes-l):
+          self.adj_matrix.append([0]*nnodes)
+          self.adj_list.append([])
+    for node in nodes:
+      self.adj_matrix[node.label][merger.label] = 1
+      self.adj_list[node.label].append(merger.label)
+      merger._built_parents[node.label] = False
+
+    return name
+  
   def check_graph_correctness(self):
     """
     Checks the graph declared so far. 

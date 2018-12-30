@@ -34,7 +34,7 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     tf.reset_default_graph()
     
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test0_init(self):
+  def test_init(self):
     """
     Test adding basic InputNode
     """
