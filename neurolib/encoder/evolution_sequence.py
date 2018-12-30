@@ -150,7 +150,6 @@ class RNNEvolutionSequence(EvolutionSequence):
       oname = self.get_output_tensor_name(oslot)
       self._oslot_to_shape[oslot] = self.cell._oslot_to_shape[oslot][:].insert(1, self.max_steps)
       o = self.builder.addOutputSequence(name="Out_" + str(oslot) + '_' + oname)
-      print("oslot", oslot)
       self.builder.addDirectedLink(self, o, oslot=oslot)
       
   def _check_dims_default_rnns(self, cclass):
@@ -260,12 +259,6 @@ class RNNEvolutionSequence(EvolutionSequence):
 class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
   """
   """
-#   def __init__(self,
-#                builder,
-#                state_sizes,
-#                num_inputs=2,
-#                name=None,
-#                **dirs):
   def __init__(self,
                builder,
                state_sizes,
@@ -274,18 +267,18 @@ class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
     Initialize the NonlinearDynamicswGaussianNoise EvolutionSequence
     """
     self.name = dirs.pop('name', 'NLDS_wGnoise')
-#     dirs['num_outputs'] = 3
-#     dirs['cell_class'] = NormalTriLCell
-    print("dirs", dirs)
+#     print("dirs", dirs)
     super(NonlinearDynamicswGaussianNoise, self).__init__(builder,
                                                           state_sizes,
-#                                                           num_inputs=num_inputs,
-#                                                           name=name,
                                                           num_outputs=3,
                                                           cell_class=NormalTriLCell,
                                                           **dirs)
     self.state_dim = self.main_output_sizes[0][0]
     
+    # Slot names
+    self._oslot_to_name[1] = 'loc'
+    self._oslot_to_name[2] = 'scale'
+
   def log_prob(self, Y):
     """
     Return the log_probability for the NonlinearDynamicswGaussianNoise
@@ -301,7 +294,6 @@ class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
     D = self.state_dim
     
     t1 = np.log(np.pi)*T*D
-#     t2 = 0.5*tf.reduce_sum(tf.log(tf.linalg.det(scales)**2), axis=1)
     t2 = 0.5*tf.reduce_sum(tf.log(tf.linalg.det(covs)), axis=1)
     t3 = -0.5*tf.reduce_sum(tf.multiply(tf.linalg.triangular_solve(scales, (Y - means)),
                                         tf.linalg.triangular_solve(scales, (Y - means))))

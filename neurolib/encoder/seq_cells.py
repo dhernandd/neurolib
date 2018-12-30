@@ -161,7 +161,6 @@ class TwoEncodersCell(CustomCell):
     """
     Evaluate the cell encoder on a set of inputs    
     """
-#     print("inputs, state", inputs, state)
     try:
       num_init_states = len(state)
     except TypeError:
@@ -306,7 +305,8 @@ class TwoEncodersCell2(CustomCell):
 
   def _get_init_states(self):
     """
-    Get the init states of the cell (which will become the init_states of the EvolutionSequence)
+    Get the init states of the cell (which will become the init_states of the
+    EvolutionSequence)
     
     The init_states are returned as a list indexed by islot.
     """

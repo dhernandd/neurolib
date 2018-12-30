@@ -64,6 +64,10 @@ class NormalTriLNode(InnerNode):
     self.main_oshape, self.D = self.get_main_oshapes() 
     self._oslot_to_shape[0] = self.main_oshape[0]
     
+    # Slot names
+    self._oslot_to_name[1] = 'loc'
+    self._oslot_to_name[2] = 'scale'
+    
     self.name = "NormalTril_" + str(self.label) if name is None else name
 
     self._update_directives(**dirs)

@@ -27,11 +27,11 @@ class InputNode(ANode):
   
   An InputNode represents a source of information. InputNodes are used to
   represent user-provided data to be fed to the MG by means of a tensorflow
-  Placeholder. InputNodes represent as well random inputs to the MG.
+  Placeholder. InputNodes may represent as well random inputs to the MG.
   
-  InputNodes have no inputs. In other words, InputNodes are sources, information
-  is "created" at the InputNode. Incoming links to the InputNode and assignment
-  to self.num_inputs are therefore forbidden.
+  InputNodes have no incoming links. Information is "created" at the InputNode.
+  Directed links into the InputNode and assignment to self.num_inputs are
+  therefore forbidden.
   
   InputNodes have one main output and possibly secondary ones. The latter are
   used most often to output the relevant statistics of a random input. In that
@@ -73,6 +73,9 @@ class InputNode(ANode):
     self.max_steps = builder.max_steps if hasattr(builder, 'max_steps') else None
     self.is_sequence = is_sequence
 
+    # Slot names
+    self._oslot_to_name[0] = 'main'
+    
     # Deal with sequences
     self.main_oshapes, self.D = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes[0]
@@ -157,7 +160,6 @@ class PlaceholderInputNode(InputNode):
     
     name = self.name
     out_shape = self.main_oshapes
-#     dtype = self.dtype_dict[dirs['dtype']]
     for oslot, out_shape in enumerate(self.main_oshapes):
       self._oslot_to_otensor[oslot] = tf.placeholder(self.dtype,
                                                      shape=out_shape,
@@ -216,6 +218,10 @@ class NormalInputNode(InputNode):
     self.name = "Normal_" + str(self.label) if name is None else name
 
     self.free_oslots = list(range(self.num_expected_outputs))
+    
+    # Slot names
+    self._oslot_to_name[1] = 'loc'
+    self._oslot_to_name[2] = 'scale'
 
     self._update_default_directives(**dirs)
     
@@ -235,7 +241,6 @@ class NormalInputNode(InputNode):
     
     if self.batch_size is None:
       dummy = tf.placeholder(self.dtype, oshape, self.name + '_dummy')
-#       self.builder.dummies.add(dummy.name)
       self.builder.dummies[dummy.name] = oshape
     else:
       dummy = tf.zeros(oshape, self.dtype)
