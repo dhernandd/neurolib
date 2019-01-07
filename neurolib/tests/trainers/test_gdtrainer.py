@@ -23,9 +23,10 @@ from neurolib.trainer.gd_trainer import GDTrainer
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 3
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 3
+range_from = 0
+range_to = 3
+tests_to_run = list(range(range_from, range_to))
 
 def prepare_datasets(dataset, scope):
   """
@@ -35,7 +36,8 @@ def prepare_datasets(dataset, scope):
   valid_dataset = {}
   test_dataset = {}
   for key in dataset:
-    d_set, inode_name = key.split('_')[0], key.split('_')[-1]
+    key_split = key.split('_')
+    d_set, inode_name = key_split[0], '_'.join(key_split[1:])
     if d_set == 'train':
       train_dataset[scope + '/' + inode_name + ':0'] = dataset[key]
     elif d_set == 'valid':
@@ -57,10 +59,10 @@ def generate_some_data():
   x = 10.0*np.random.randn(100, 2)
   y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
   xtrain, xvalid, ytrain, yvalid = x[:80], x[80:], y[:80], y[80:]
-  dataset = {'train_features' : xtrain,
-             'train_response' : ytrain,
-             'valid_features' : xvalid,
-             'valid_response' : yvalid}
+  dataset = {'train_observation_in' : xtrain,
+             'train_observation_out' : ytrain,
+             'valid_observation_in' : xvalid,
+             'valid_observation_out' : yvalid}
   return dataset
 
 
@@ -83,14 +85,14 @@ class GDTrainerTest(tf.test.TestCase):
     out_dim = 1
     builder = StaticBuilder(scope="regression",
                             batch_size=self.batch_size)
-    in0 = builder.addInput(in_dim, name="features")
+    in0 = builder.addInput(in_dim, name="observation_in")
     enc1 = builder.addInner(out_dim, num_inputs=1, **dirs)
     out0 = builder.addOutput(name="prediction")
 
     builder.addDirectedLink(in0, enc1)
     builder.addDirectedLink(enc1, out0)
 
-    in1 = builder.addInput(out_dim, name="i_response")
+    in1 = builder.addInput(out_dim, name="observation_out")
     out1 = builder.addOutput(name="response")
     builder.addDirectedLink(in1, out1)
 
@@ -116,13 +118,13 @@ class GDTrainerTest(tf.test.TestCase):
     out_dim = 1
     num_epochs = 10
     builder = StaticBuilder(scope=scope)
-    in0 = builder.addInput(in_dim, name="features")
+    in0 = builder.addInput(in_dim, name="observation_in")
     enc1 = builder.addInner(out_dim, num_inputs=1, **dirs)
     out0 = builder.addOutput(name="prediction")
     builder.addDirectedLink(in0, enc1)
     builder.addDirectedLink(enc1, out0)
 
-    in1 = builder.addInput(out_dim, name="i_response")
+    in1 = builder.addInput(out_dim, name="observation_out")
     out1 = builder.addOutput(name="response")
     builder.addDirectedLink(in1, out1)
 
@@ -152,13 +154,13 @@ class GDTrainerTest(tf.test.TestCase):
     out_dim = 1
     num_epochs = 10
     builder = StaticBuilder(scope=scope)
-    in0 = builder.addInput(in_dim, name="features")
+    in0 = builder.addInput(in_dim, name="observation_in")
     enc1 = builder.addInner(out_dim, num_inputs=1, **dirs)
     out0 = builder.addOutput(name="prediction")
     builder.addDirectedLink(in0, enc1)
     builder.addDirectedLink(enc1, out0)
 
-    in1 = builder.addInput(out_dim, name="i_response")
+    in1 = builder.addInput(out_dim, name="observation_out")
     out1 = builder.addOutput(name="response")
     builder.addDirectedLink(in1, out1)
 
@@ -166,7 +168,7 @@ class GDTrainerTest(tf.test.TestCase):
 
     trainer = GDTrainer(builder,
                         cost=('mse', ('prediction', 'response')),
-                        save=True,
+#                         save=True,
                         **dirs)
     trainer.train(dataset_dict, num_epochs, batch_size=self.batch_size)
 

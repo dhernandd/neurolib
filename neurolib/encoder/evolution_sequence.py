@@ -43,24 +43,24 @@ class EvolutionSequence(InnerNode):
                state_sizes,
                num_inputs=2,
                num_outputs=1,
-#                name=None,
                mode='forward'):
     """
     Initialize an EvolutionSequence
     """
     super(EvolutionSequence, self).__init__(builder,
                                             is_sequence=True)
-#     self.name = 'EvSeq_' + str(self.label) if name is None else name    
 
-    self.main_output_sizes = self.get_output_sizes(state_sizes)
-    self.main_oshapes, self.D = self.get_main_oshapes()
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
+    self.main_oshapes = self.get_state_full_shapes()
+    self.D = self.get_state_size_ranks()
     for oslot, shape in enumerate(self.main_oshapes):
-      print("oslot, shape", oslot, shape)
+      print("ev seq; oslot, shape", oslot, shape)
       self._oslot_to_shape[oslot] = shape
+      self.oslot_to_name[oslot] = 'main_' + str(self.label) + '_' + str(oslot)
     
     self.num_expected_outputs = num_outputs
     self.num_expected_inputs = num_inputs
-    self.num_states = len(self.main_output_sizes)
+    self.num_states = len(self.state_sizes)
     self.num_input_seqs = self.num_expected_inputs - self.num_states
     
     self.free_oslots = list(range(self.num_expected_outputs))
@@ -85,28 +85,20 @@ class RNNEvolutionSequence(EvolutionSequence):
   def __init__(self,
                builder,
                state_sizes,
-#                num_inputs=2,
-#                num_outputs=1,
-#                cell_class='basic',
-#                name=None,
+               num_inputs=2,
+               num_outputs=1,
+               name_prefix=None,
                **dirs):
     """
     Initialize the RNNEvolutionSequence
     """
-    try:
-      num_inputs = dirs.pop('num_inputs')
-    except KeyError:
-      raise KeyError("Missing argument `num_inputs`")
-    num_outputs = dirs.pop('num_outputs', 1)
-
     super(RNNEvolutionSequence, self).__init__(builder,
                                                state_sizes,
                                                num_inputs=num_inputs,
                                                num_outputs=num_outputs,
-#                                                name=name,
                                                mode='forward')
-    if not hasattr(self, 'name'):
-      self.name = dirs.pop('name', 'RNN_' + str(self.label))
+    self.name = ('RNN_' + str(self.label) if name_prefix is None 
+                 else name_prefix + '_' + str(self.label))
 
     # Get cell_class and cell
     cell_class = dirs.pop('cell_class', 'basic')
@@ -118,18 +110,34 @@ class RNNEvolutionSequence(EvolutionSequence):
       self.cell_class = cell_class
       self._set_cclass_name()
     
-    if issubclass(cell_class, CustomCell): 
+    if issubclass(cell_class, CustomCell):
+      print("evs; state_sizes", state_sizes)
+      print("evs; self.builder", self.builder)
       self.cell = cell_class(state_sizes,
                              builder=self.builder)  #pylint: disable=not-callable
-      self._declare_secondary_outputs()
     else:
-      osize = self.main_output_sizes[0][0]
+      osize = self.state_sizes[0][0]
       self.cell = cell_class(osize)
     
     self._update_default_directives(**dirs)
     
     # Add the init_inode_names and the init_inode_names -> ev_seq edge
     self._declare_init_state()
+    
+    if isinstance(self.cell, CustomCell):
+      self._declare_secondary_outputs()
+    
+    if self.num_input_seqs == 0:
+      self.dummy_bsz = tf.placeholder(tf.int32, [self.batch_size],
+                                      self.name + '_dummy_bsz')
+      inseq_dummy = tf.zeros([self.max_steps], dtype=tf.float64)
+      inseq_dummy = tf.tile(inseq_dummy, self.dummy_bsz)
+      self.dummy_input_series = tf.reshape(inseq_dummy, [-1, self.max_steps, 1])
+#       dummy_is = tf.placeholder(dtype=tf.float64,
+#                                 shape=[1, self.max_steps, 1],
+#                                 name=self.name + '_dummy_is')
+      self.builder.dummies[self.dummy_bsz.name] = [self.batch_size]
+#       self.dummy_input_series = tf.zeros_like(dummy_is, dtype=tf.float64)
 
   def _set_cclass_name(self):
     """
@@ -147,9 +155,13 @@ class RNNEvolutionSequence(EvolutionSequence):
     Declare secondary output nodes and link them
     """
     for oslot in self.cell.secondary_output_slots:
-      oname = self.get_output_tensor_name(oslot)
+      desc = self.cell.directives['out_' + str(oslot) + '_name']
+      oname = str(self.label) + '_' + str(oslot) + '_' + desc
+      self.oslot_to_name[oslot] = oname
+#       oname = self.get_output_tensor_name(oslot)
       self._oslot_to_shape[oslot] = self.cell._oslot_to_shape[oslot][:].insert(1, self.max_steps)
-      o = self.builder.addOutputSequence(name="Out_" + str(oslot) + '_' + oname)
+      o = self.builder.addOutputSequence(name="Out_" + str(self.label) + '_' 
+                                         + str(oslot) + '_' + desc)
       self.builder.addDirectedLink(self, o, oslot=oslot)
       
   def _check_dims_default_rnns(self, cclass):
@@ -159,15 +171,15 @@ class RNNEvolutionSequence(EvolutionSequence):
     if cclass == 'basic':
       pass
     if cclass == 'lstm':
-      if len(self.main_output_sizes) == 1:
-        self.main_output_sizes = self.main_output_sizes*2
-      if len(self.main_output_sizes) == 2:
-        if self.main_output_sizes[0] != self.main_output_sizes[1]:
-          raise ValueError("`self.main_output_sizes[0] != self.main_output_sizes[1]` "
-                           "({}, {})".format(self.main_output_sizes[0],
-                                             self.main_output_sizes[1]))
-      if len(self.main_output_sizes) > 2:
-        raise ValueError("`len(self.main_output_sizes) == 1 or 2` for an LSTM cell")
+      if len(self.state_sizes) == 1:
+        self.state_sizes = self.state_sizes*2
+      if len(self.state_sizes) == 2:
+        if self.state_sizes[0] != self.state_sizes[1]:
+          raise ValueError("`self.state_sizes[0] != self.state_sizes[1]` "
+                           "({}, {})".format(self.state_sizes[0],
+                                             self.state_sizes[1]))
+      if len(self.state_sizes) > 2:
+        raise ValueError("`len(self.state_sizes) == 1 or 2` for an LSTM cell")
       
   def _declare_init_state(self):
     """
@@ -177,8 +189,8 @@ class RNNEvolutionSequence(EvolutionSequence):
     EvolutionSequence, hence they are defined outside of it. Specifically,
     custom cells do NOT use their internal Builder to build the nodes
     corresponding to their initial state. Instead, they have a method
-    `get_init_states` that takes as argument the EvolutionSequence builder and
-    uses it to build its initial states.
+    `get_init_states` that takes as argument the external EvolutionSequence
+    builder and uses it to build its initial states.
     """
     builder = self.builder
     self.init_inodes = []
@@ -189,17 +201,21 @@ class RNNEvolutionSequence(EvolutionSequence):
         builder.addDirectedLink(init_inode, self, islot=islot)
         self.init_inodes.append(init_inode)
     except AttributeError:
-      for islot, osize in enumerate(self.main_output_sizes):
+      for islot, osize in enumerate(self.state_sizes):
         init_inode_name = builder.addInput(osize[0], iclass=NormalInputNode)
         builder.addDirectedLink(init_inode_name, self, islot=islot)
         self.init_inodes.append(builder.nodes[init_inode_name])
-    
+  
+  def get_init_inodes(self):
+    """
+    """
+    return self.init_inodes
+  
   def _update_default_directives(self, **dirs):
     """
     Update the default directives
     """
-    self.directives = {'out_' + str(i) + '_name' : self.name + '_' + str(i) 
-                       for i in range(self.num_expected_outputs)}
+    self.directives = {'output_0_name' : 'main'}
     self.directives.update(dirs)
   
   def get_init_state_tuple(self):
@@ -222,32 +238,31 @@ class RNNEvolutionSequence(EvolutionSequence):
     cell = self.cell
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       init_states = self.get_init_state_tuple()
-      inputs_series = basic_concatenation(self._islot_to_itensor,
-                                          start_from=self.num_states)
+#       print("es; self.num_input_seqs", self.num_input_seqs)
+      if self.num_input_seqs > 0:
+        inputs_series = basic_concatenation(self._islot_to_itensor,
+                                            start_from=self.num_states)
+      else:
+        inputs_series = self.dummy_input_series 
+#       print("evseq; init_states", init_states)
       states_series, _ = tf.nn.dynamic_rnn(cell,
-                                        inputs_series,
-                                        initial_state=init_states)
-      print("ev_seq; states_series", states_series)
-      try:
-        for oslot, state in enumerate(states_series):
-#           print("ev_seq; oslot, state", oslot, state)
-          out_name = self.get_output_tensor_name(oslot)
-          self._oslot_to_otensor[oslot] = tf.identity(state, name=out_name)
-      except TypeError:
-        out_name = self.directives['out_0' + '_name']
-        self._oslot_to_otensor[0] = tf.identity(states_series, name=out_name)
+                                           inputs_series,
+                                           initial_state=init_states)
+#       print("ev_seq; states_series", states_series)
+      
+    try:
+      for oslot, state in enumerate(states_series):
+        if 'output_' + str(oslot) + '_name' in self.directives:
+          out_name = (self.name + '_' 
+                      + self.directives['output_' + str(oslot) + '_name'])
+        else:
+          out_name = self.name + '_' + str(oslot)
+        self._oslot_to_otensor[oslot] = tf.identity(state, name=out_name)
+    except TypeError:
+      out_name = self.directives['output_0' + '_name']
+      self._oslot_to_otensor[0] = tf.identity(states_series, name=out_name)
           
     self._is_built = True
-
-  def get_output_tensor_name(self, oslot):
-    """
-    Get the name of the output tensor corresponding to an oslot, based on the
-    underlying Cell
-    """
-    try:
-      return self.cell.directives['out_' + str(oslot) + '_name']
-    except KeyError:
-      return self.directives['out_' + str(oslot) + '_name']
     
   def __call__(self, inputs=None, islot_to_itensor=None):
     """
@@ -262,22 +277,38 @@ class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
   def __init__(self,
                builder,
                state_sizes,
+               name=None,
                **dirs):
     """
     Initialize the NonlinearDynamicswGaussianNoise EvolutionSequence
     """
-    self.name = dirs.pop('name', 'NLDS_wGnoise')
-#     print("dirs", dirs)
+    ni = dirs.pop('num_inputs', None)
+    if ni and ni != 2: 
+      raise ValueError("Provided `num_inputs` {} inconsistent with "
+                       "evseq class {}".format(ni, 2))
     super(NonlinearDynamicswGaussianNoise, self).__init__(builder,
                                                           state_sizes,
+                                                          num_inputs=2,
                                                           num_outputs=3,
                                                           cell_class=NormalTriLCell,
+                                                          name_prefix='NLDS_wGnoise',
                                                           **dirs)
-    self.state_dim = self.main_output_sizes[0][0]
+    if name is not None: self.name = name # override default
     
     # Slot names
-    self._oslot_to_name[1] = 'loc'
-    self._oslot_to_name[2] = 'scale'
+    self.oslot_to_name[1] = 'loc_' + str(self.label) + '_1' 
+    self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
+    
+    self.state_dim = self.state_sizes[0][0]
+
+  def _update_default_directives(self, **dirs):
+    """
+    Update the default directives
+    """
+    self.directives = {'output_0_name' : 'main',
+                       'output_1_name' : 'loc',
+                       'output_2_name' : 'scale'}
+    self.directives.update(dirs)
 
   def log_prob(self, Y):
     """
@@ -308,10 +339,7 @@ class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
                             "Method `entropy` can only be accessed once the "
                             "node is built")
     scales = self._oslot_to_otensor[2]
-#     print(scales)
-#     print(tf.linalg.det(scales))
     covs = tf.matmul(scales, scales, transpose_b=True)
-#     return 0.5*tf.reduce_sum(tf.log(tf.linalg.det(scales)**2), axis=1)
     return 0.5*tf.reduce_sum(tf.log(tf.linalg.det(covs)), axis=1)
     
   def __call__(self, inputs=None, islot_to_itensor=None):

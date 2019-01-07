@@ -17,7 +17,7 @@ import unittest
 
 import tensorflow as tf
 
-from neurolib.models.dkf import DeepKalmanFilter
+from neurolib.models.flds import fLDS
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -26,7 +26,7 @@ range_from = 1
 range_to = 2
 tests_to_run = list(range(range_from, range_to))
 
-class DKFTestBuild(tf.test.TestCase):
+class FLDSTestBuild(tf.test.TestCase):
   """
   """  
   def setUp(self):
@@ -39,18 +39,19 @@ class DKFTestBuild(tf.test.TestCase):
     """
     """
     print("\nTest 0: DKF initialization")
-    DeepKalmanFilter(input_dims=[[3]],
-                     state_dims=[[5], [4]])
+    fLDS(input_dims=[[10]],
+         state_dims=[[3]])
   
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_build(self):
     """
     """
     print("\nTest 1: DKF build")
-    dkf = DeepKalmanFilter(input_dims=[[3]],
-                           state_dims=[[5], [4]])
-    dkf.build()
+    flds = fLDS(input_dims=[[10]],
+                state_dims=[[3]])
+    flds.build()
 
 
 if __name__ == '__main__':
   unittest.main(failfast=True)
+  

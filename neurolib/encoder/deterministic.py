@@ -67,11 +67,16 @@ class DeterministicNNNode(InnerNode):
     
     self.name = "Det_" + str(self.label) if name is None else name
     
-    self.main_output_sizes = self.get_output_sizes(state_sizes)
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
+#     self.main_output_sizes = self.get_output_sizes(state_sizes)
     self.num_expected_inputs = num_inputs
     
     # Define main shape
-    self.main_oshapes, self.D = self.get_main_oshapes()
+    self.main_oshapes = self.get_state_full_shapes()
+    self.state_ranks = self.get_state_size_ranks()
+    self.xdim = self.state_sizes[0][0]
+
+#     self.main_oshapes, self.D = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes
     
     self.free_oslots = list(range(self.num_expected_outputs))
@@ -126,15 +131,15 @@ class DeterministicNNNode(InnerNode):
       raise err
     
     # Build
-    output_dim = self.main_output_sizes[0][0]
+#     self.xdim = self.main_output_sizes[0][0]
     if num_layers == 1:
-      output = layers[0](_input, output_dim, activation_fn=activations[0])
+      output = layers[0](_input, self.xdim, activation_fn=activations[0])
     else:
       for n, layer in enumerate(layers):
         if n == 0:
           hid_layer = layer(_input, num_nodes, activation_fn=activations[n])
         elif n == num_layers-1:
-          output = layer(hid_layer, output_dim, activation_fn=activations[n])
+          output = layer(hid_layer, self.xdim, activation_fn=activations[n])
         else:
           hid_layer = layer(hid_layer, int(num_nodes*net_grow_rate),
                             activation_fn=activations[n])

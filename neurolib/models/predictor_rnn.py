@@ -103,7 +103,8 @@ class PredictorRNN(Model):
     else:
       self._is_custom_build = True
       
-      self.input_dims = builder.nodes['inputSeq'].main_output_sizes
+#       self.input_dims = builder.nodes['observation_in'].main_output_sizes
+      self.input_dims = builder.nodes['observation_in'].state_sizes
     
     self.num_inputs = num_inputs
     self.is_categorical = is_categorical
@@ -166,7 +167,7 @@ class PredictorRNN(Model):
                                                  max_steps=self.max_steps)
       nstate_dims, ninput_dims = len(self.state_dims), len(self.input_dims)
       ninputs_evseq = ninput_dims + nstate_dims
-      is1 = builder.addInputSequence(self.input_dims, name='inputSeq')
+      is1 = builder.addInputSequence(self.input_dims, name='observation_in')
       evs1 = builder.addEvolutionSequence(state_sizes=self.state_dims,
                                           num_inputs=ninputs_evseq,
                                           ev_seq_class=self.seq_class,
@@ -186,7 +187,7 @@ class PredictorRNN(Model):
       self._check_custom_build()
       builder.scope = self._main_scope
     data_type = 'int32' if self.is_categorical else 'float64'
-    is2 = builder.addInputSequence(self.input_dims, name='outputSeq', dtype=data_type)
+    is2 = builder.addInputSequence(self.input_dims, name='observation_out', dtype=data_type)
     os2 = builder.addOutputSequence(name='observation')
     builder.addDirectedLink(is2, os2)
     
@@ -218,11 +219,11 @@ class PredictorRNN(Model):
     """
     Check that the provided dataset is coconsistent with the RNNPredictor names
     """
-    for key in ['train_outputSeq', 'valid_outputSeq']:
+    for key in ['train_observation_out', 'valid_observation_out']:
       if key not in dataset:
         raise AttributeError("dataset must contain key `{}` ".format(key))
     if not self._is_custom_build:
-      for key in ['train_inputSeq', 'valid_inputSeq']:
+      for key in ['train_observation_in', 'valid_observation_in']:
         if key not in dataset:
           raise AttributeError("dataset must contain key `{}` ".format(key))
       

@@ -13,20 +13,25 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os.path
+
+my_path = os.path.abspath(os.path.dirname(__file__))
+
 import unittest
+import pickle
 
 import tensorflow as tf
 
-from neurolib.models.dkf import DeepKalmanFilter
+from neurolib.models.flds import fLDS
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 2
-range_from = 1
-range_to = 2
+# NUM_TESTS : 1
+range_from = 0
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
-class DKFTestBuild(tf.test.TestCase):
+class fLDSTestTrain(tf.test.TestCase):
   """
   """  
   def setUp(self):
@@ -35,22 +40,28 @@ class DKFTestBuild(tf.test.TestCase):
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_init(self):
+  def test_train(self):
     """
     """
-    print("\nTest 0: DKF initialization")
-    DeepKalmanFilter(input_dims=[[3]],
-                     state_dims=[[5], [4]])
-  
-  @unittest.skipIf(1 not in tests_to_run, "Skipping")
-  def test_build(self):
-    """
-    """
-    print("\nTest 1: DKF build")
-    dkf = DeepKalmanFilter(input_dims=[[3]],
-                           state_dims=[[5], [4]])
-    dkf.build()
+    print("\nTest 1: fLDS build")
 
+    dataset = {}
+    fname = my_path + '/datadict_gaussianobs2D'
+    with open(fname, 'rb') as f:
+      datadict = pickle.load(f)
+      Ytrain = datadict['Ytrain']
+      Yshape = Ytrain.shape
+      dataset['train_observation'] = Ytrain
+      dataset['valid_observation'] = datadict['Yvalid']
+      max_steps, input_dims = Yshape[-2], Yshape[-1]
+      
+    flds = fLDS(input_dims=[[input_dims]],
+                max_steps=max_steps,
+                state_dims=[[3]])
+    flds.build()
+    flds.train(dataset, num_epochs=10)
+    
 
 if __name__ == '__main__':
   unittest.main(failfast=True)
+  

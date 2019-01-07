@@ -14,6 +14,7 @@
 #
 # ==============================================================================
 import abc
+from collections import defaultdict
 from bidict import bidict
 
 # pylint: disable=bad-indentation, no-member, protected-access
@@ -76,12 +77,13 @@ class ANode(abc.ABC):
     self._oslot_to_shape = {}
     self._islot_to_itensor = {}
     self._oslot_to_otensor = {}
-    self._islot_to_name = bidict({})
-    self._oslot_to_name = bidict({})
+    self.islot_to_name = bidict({})
+    self.oslot_to_name = bidict({})
     
     self._built_parents = {}
-    self._child_label_to_oslot = {}
-    self._parent_label_to_islot = bidict({})
+    self._child_label_to_slot_pairs = defaultdict(list)
+#     self._parent_label_to_islot = bidict({})
+    self._parent_label_to_islot = defaultdict(list)
     
     self._is_built = False
   
@@ -128,7 +130,7 @@ class ANode(abc.ABC):
     self._num_declared_outputs = value
   
   @staticmethod
-  def get_output_sizes(state_sizes):
+  def state_sizes_to_list(state_sizes):
     """
     Get a list of output sizes corresponding to each oslot
     """
@@ -140,27 +142,24 @@ class ANode(abc.ABC):
                         "of int")
     return state_sizes
     
-  def get_main_oshapes(self):
+  def get_state_full_shapes(self):
     """
-    Get the main output shapes for this ANode    
+    Get the state size shapes for this ANode    
     """
     bsz = self.batch_size
     mx_stps = self.max_steps
-    ssz = self.main_output_sizes
     if self.is_sequence:
-      main_oshapes = [[bsz, mx_stps] for _ in range(len(ssz))]
+      main_oshapes = [[bsz, mx_stps] + sz for sz in self.state_sizes]
     else:
-      main_oshapes = [[bsz] for _ in range(len(ssz))]
+      main_oshapes = [[bsz] + sz for sz in self.state_sizes]
     
-    D = []
-    try: # quack!
-      for oslot, osize in enumerate(ssz):
-        main_oshapes[oslot].extend(osize)
-        D.append(len(osize))
-    except TypeError:
-      raise TypeError("Failed to define `main_oshapes`")
-    
-    return main_oshapes, D
+    return main_oshapes
+  
+  def get_state_size_ranks(self): 
+    """
+    Get the ranks of the states for this ANode
+    """
+    return [len(sz) for sz in self.state_sizes]
     
   def get_islot_shape(self, islot=0):
     """
@@ -177,29 +176,26 @@ class ANode(abc.ABC):
     """
     return self._oslot_to_shape[oslot]
 
-  def get_inputs(self):
+  def get_input(self, islot):
     """
     Return a dictionary whose keys are the islots of the ANode and whose values
     are the incoming tensorflow Tensors.
     
     Requires the node to be built.
     """
-    if not self._is_built:
-      raise NotImplementedError("A Node must be built before its inputs and "
-                                "outputs can be accessed")
-    return self._islot_to_itensor
+    return self._islot_to_itensor[islot]
     
-  def get_outputs(self):
+  def get_output(self, oslot):
     """
     Return a dictionary whose keys are the oslots of the ANode and whose values
     are the outgoing tensorflow Tensors.
     
     Requires the node to be built.
     """
-    if not self._is_built:
-      raise NotImplementedError("A Node must be built before its inputs and "
-                                "outputs can be accessed")
-    return self._oslot_to_otensor
+#     if not self._is_built:
+#       raise NotImplementedError("A Node must be built before its outputs "
+#                                 "can be accessed")
+    return self._oslot_to_otensor[oslot]
   
   def update_when_linked_as_node1(self):
     """
@@ -210,3 +206,9 @@ class ANode(abc.ABC):
     """
     """
     pass
+  
+  def __call__(self, inputs, state):
+    """
+    """
+    raise NotImplementedError("")
+  

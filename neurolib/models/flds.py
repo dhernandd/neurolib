@@ -13,43 +13,45 @@
 # limitations under the License.
 #
 # ==============================================================================
-import pickle
-
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
-from neurolib.encoder.normal import NormalTriLNode
-from neurolib.encoder.evolution_sequence import NonlinearDynamicswGaussianNoise
+from neurolib.encoder.normal import NormalPrecisionNode
+from neurolib.encoder.seq_cells import LDSCell
+from neurolib.encoder.merge import MergeSeqsNormalLDSEv
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-class DeepKalmanFilter(Model):
+class fLDS(Model):
   """
-  The Deep Kalman Filter set of models from Krishnan et al
-  (https://arxiv.org/abs/1511.05121)
+  The fLDS class of Models. References are:
+  
+  - Gao Y, Archer E, Paninski L, Cunningham JP (2016). Linear dynamical neural
+  population models through nonlinear embeddings; https://arxiv.org/abs/1605.08454
+  
+  - Archer E, Park IM, Büsing L, Cunningham JP, Paninski L. (2016) Black box
+  variational inference for state space models.
+  
   
   TODO:
   """
   def __init__(self,
                input_dims=None,
                state_dims=None,
-#                output_dims=None,
-#                num_inputs=1,
                builder=None,
                batch_size=1,
                max_steps=25,
                rnn_cell_class='basic',
                rnn_mode='fwd',
-               seq_class=NonlinearDynamicswGaussianNoise,
+#                seq_class=NonlinearDynamicswGaussianNoise,
 #                cell_class='basic',
-               is_categorical=False,
-               num_labels=None,
-               root_rslts_dir=None,
-               save_on_valid_improvement=False,
-               keep_logs=False,
+#                is_categorical=False,
+#                num_labels=None,
+               rslt_dir=None,
+               save=False,
                **dirs):
     """
-    Initialize the DeepKalmanFilter
+    Initialize the fLDS
     
     Args:
         input_dims (int or list of list of ints) : The dimensions of the input
@@ -66,17 +68,11 @@ class DeepKalmanFilter(Model):
         
         max_steps (int) :
         
-        seq_class (str or EvolutionSequence) :
-        
         cell_class (str, tf Cell or CustomCell) :
-        
-        num_labels (int or None) :
-        
-        is_categorical (bool) : Is the data categorical?
         
         dirs (dict) :
     """
-    super(DeepKalmanFilter, self).__init__()
+    super(fLDS, self).__init__()
     
     self.builder = builder
     if self.builder is None:
@@ -87,56 +83,46 @@ class DeepKalmanFilter(Model):
       if state_dims is None:
         raise ValueError("Missing argument `state_dims` is required to build "
                          "the default DeepKalmanFilter")
-      else:
-        if len(state_dims) < 2:
-          raise ValueError("Argument `state_dims` must be a list of size >=2, "
-                           "(len(state_dims) = {})".format(len(state_dims)))
-#       if output_dims is None and not is_categorical:
-#         raise ValueError("Argument output_dims is required to build the default "
-#                          "RNNClassifier")
-      if num_labels is None and is_categorical:
-        raise ValueError("Argument num_labels is required to build the default "
-                         "RNNClassifier")
+#       else:
+#         if len(state_dims) > 1:
+#           raise ValueError("Argument `state_dims` must be a list of size >=2, "
+#                            "(len(state_dims) = {})".format(len(state_dims)))
 
       self.rnn_cell_class = rnn_cell_class
-      self.seq_class = seq_class
+#       self.seq_class = seq_class
       self.rnn_mode = rnn_mode
       
       # Deal with dimensions
       self.input_dims = input_dims
       self.state_dims = state_dims
-#       self.output_dims = output_dims
       self._dims_to_list()
-      self.main_input_dim = self.input_dims[:1]
+      self.ydim = self.input_dims[0][0]
+      self.xdim = self.state_dims[0][0]
+#       self.main_input_dim = self.input_dims[:1]
 
       self.num_inputs = len(self.input_dims)
-      self.rnn_state_dims = (self.state_dims[0:1] if self.rnn_mode == 'fwd' 
-                             else self.state_dims[0:2])
-      self.num_rnn_state_dims = len(self.rnn_state_dims)
-      self.num_inputs_rnn = self.num_rnn_state_dims + self.num_inputs
-      self.ds_dims = (self.state_dims[1:] if self.rnn_mode == 'fwd' 
-                      else self.state_dims[2:])
+#       self.rnn_state_dims = (self.state_dims[0:1] if self.rnn_mode == 'fwd' 
+#                              else self.state_dims[0:2])
+#       self.num_rnn_state_dims = self.state_dims
+#       self.num_rnn_state_dims = len(self.rnn_state_dims)
+#       self.num_inputs_rnn = self.num_rnn_state_dims
+      
+#       self.ds_dims = (self.state_dims[1:] if self.rnn_mode == 'fwd' 
+#                       else self.state_dims[2:])
+      self.ds_dims = self.state_dims
       self.num_ds_dims = len(self.ds_dims)
-      self.num_inputs_ds = self.num_ds_dims + self.num_rnn_state_dims
+      self.num_inputs_ds = self.num_ds_dims # + self.num_rnn_state_dims
     else:
       self._is_custom_build = True
       
       self.input_dims = builder.nodes['inputSeq'].main_output_sizes
-
-    self.is_categorical = is_categorical
-    if is_categorical:
-      if not num_labels:
-        raise ValueError("`num_labels` argument must be a positive integer "
-                         "for categorical data")
-      self.num_labels = num_labels
     
     self.batch_size = batch_size
     self.max_steps = max_steps
     
-    self._main_scope = 'DKF'
-    self.root_rslt_dir = root_rslts_dir
-    self.save = save_on_valid_improvement
-    self.keep_logs = keep_logs
+    self._main_scope = 'fLDS'
+    self.rslt_dir = rslt_dir
+    self.save = save
     
     self._update_default_directives(**dirs)
 
@@ -144,7 +130,7 @@ class DeepKalmanFilter(Model):
     self.nodes = None
     self.cost = None
     self.trainer = None
-
+    
   def _dims_to_list(self):
     """
     Store the dimensions of the Model in list of lists format
@@ -153,8 +139,6 @@ class DeepKalmanFilter(Model):
       self.input_dims = [[self.input_dims]]
     if isinstance(self.state_dims, int):
       self.state_dims = [[self.state_dims]]
-#     if isinstance(self.output_dims, int):
-#       self.output_dims = [[self.output_dims]]
 
     # Fix dimensions for special cases
     if self.rnn_cell_class == 'lstm':
@@ -166,14 +150,12 @@ class DeepKalmanFilter(Model):
     """
     Update the default directives with user-provided ones.
     """
-    self.directives = {'loss_func' : 'elbo',
-                       'tr_optimizer' : 'adam',
-                       'tr_lr' : 1e-3,
-                       'tr_summaries' : [('entropy', ('Recognition',))]}
+    self.directives = {'trainer' : 'gd',
+                       'loss_func' : 'elbo',
+                       'gd_optimizer' : 'adam',
+                       'lr' : 1e-3}
     
     self.directives.update(directives)
-    
-    self.tr_dirs = self.extract_dirs('tr') 
             
   def build(self):
     """
@@ -181,30 +163,52 @@ class DeepKalmanFilter(Model):
     """
     builder = self.builder
     dirs = self.directives
+    ydim = self.ydim
+    xdim = self.xdim
     if builder is None:
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
-                                                 max_steps=self.max_steps)      
-      for j, idim in enumerate(self.input_dims):
-        is1 = builder.addInputSequence([idim], name='observation_'+str(j)) # FIX!
-      evs1 = builder.addEvolutionSequence(state_sizes=self.rnn_state_dims,
-                                          num_inputs=self.num_inputs_rnn,
-                                          cell_class=self.rnn_cell_class,
-                                          name='RNN',
-                                          **dirs)
-      evs2 = builder.addEvolutionSequence(state_sizes=self.ds_dims,
-                                          ev_seq_class=NonlinearDynamicswGaussianNoise,
-                                          name='Recognition',
-                                          **dirs)
-      inn1 = builder.addInnerSequence(self.input_dims[:1],
-                                      node_class=NormalTriLNode,
-                                      name='Generative')
+                                                 max_steps=self.max_steps) 
+      is1 = builder.addInputSequence([[ydim]], name='observation')
+      ins1 = builder.addInnerSequence([[xdim]], num_inputs=1, node_class=NormalPrecisionNode)
+      evs1 = builder.addEvolutionSequence([[xdim]],
+                                          num_inputs=1,
+                                          num_outputs=1,
+                                          cell_class=LDSCell)
+      m1 = builder.addMergeNode([[xdim]],
+                                [ins1, evs1],
+                                MergeSeqsNormalLDSEv,
+                                name='Recognition')
+      ins2 = builder.addInnerSequence([[ydim]],
+                                      num_inputs=1,
+                                      node_class=NormalPrecisionNode,
+                                      name='Generative',
+                                      with_constant_precision=True)
       os1 = builder.addOutputSequence(name='prediction')
-            
-      builder.addDirectedLink(is1, evs1, islot=self.num_rnn_state_dims)
-      print("dkf; self.num_inputs_ds", self.num_inputs_ds)
-      builder.addDirectedLink(evs1, evs2, islot=self.num_ds_dims)
-      builder.addDirectedLink(evs2, inn1)
-      builder.addDirectedLink(inn1, os1)      
+      builder.addDirectedLink(is1, ins1)
+      builder.addDirectedLink(m1, ins2)
+      builder.addDirectedLink(ins2, os1)     
+#       for j, idim in enumerate(self.input_dims):
+#         is1 = builder.addInputSequence([idim], name='observation_'+str(j)) # FIX!
+#       evs1 = builder.addEvolutionSequence(state_sizes=self.rnn_state_dims,
+#                                           num_inputs=self.num_inputs_rnn,
+#                                           cell_class=self.rnn_cell_class,
+#                                           name='RNN',
+#                                           **dirs)
+#       evs2 = builder.addEvolutionSequence(state_sizes=self.ds_dims,
+#                                           num_inputs=self.num_inputs_ds,
+#                                           ev_seq_class=NonlinearDynamicswGaussianNoise,
+#                                           name='Recognition',
+#                                           **dirs)
+#       inn1 = builder.addInnerSequence(self.input_dims[:1],
+#                                       node_class=NormalTriLNode,
+#                                       name='Generative')
+#       os1 = builder.addOutputSequence(name='prediction')
+#             
+#       builder.addDirectedLink(is1, evs1, islot=self.num_rnn_state_dims)
+#       print("dkf; self.num_inputs_ds", self.num_inputs_ds)
+#       builder.addDirectedLink(evs1, evs2, islot=self.num_ds_dims)
+#       builder.addDirectedLink(evs2, inn1)
+#       builder.addDirectedLink(inn1, os1)      
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
@@ -212,43 +216,17 @@ class DeepKalmanFilter(Model):
     builder.build()
     self.nodes = self.builder.nodes
     
-    cost = ('elbo', ('Generative', 'Recognition', 'observation_0'))
+    cost = ('elbo', ('Generative', 'Recognition', 'observation'))
     self.trainer = GDTrainer(self.builder,
                              cost,
                              name=self._main_scope,
-                             root_rslts_dir=self.root_rslt_dir,
+                             rslt_dir=self.rslt_dir,
                              batch_size=self.batch_size,
-                             save_on_valid_improvement=self.save,
-                             keep_logs=self.keep_logs,
-                             **self.tr_dirs)
+                             save=self.save,
+                             **dirs)
       
-    self.store_names_dict()
-    
     self._is_built = True
 
-  def store_names_dict(self):
-    """
-    """
-    if self.save:
-      rslt_dir = self.trainer.rslt_dir
-      onames = set()
-      with open(rslt_dir + 'output_names', 'wb') as f1:
-        for node_name in self.builder.nodes:
-          node = self.builder.nodes[node_name]
-          for i in range(node.num_expected_outputs):
-            onames.add(node.get_output(i).name)
-        pickle.dump(onames, f1)
-      with open(rslt_dir + 'feed_keys', 'wb') as f2:
-        feed_data = set()
-        dummies = set()
-        for node_name in self.builder.input_nodes:
-          node = self.builder.input_nodes[node_name]
-          feed_data.add(node.get_output(0).name)
-        for node_name in self.builder.dummies:
-          dummies.add(node_name)
-        feed = {'data' : feed_data, 'dummies' : dummies}
-        pickle.dump(feed, f2)
-        
   def _check_custom_build(self):
     """
     Check that a user-declared build is consistent with the DeepKalmanFilter names
@@ -260,9 +238,13 @@ class DeepKalmanFilter(Model):
     """
     Check that the provided dataset is consistent with the DeepKalmanFilter names
     """
-    for key in ['train_observation_0', 'valid_observation_0']:
+    for key in ['train_observation', 'valid_observation']:
       if key not in dataset:
         raise AttributeError("dataset must contain key `{}` ".format(key))
+#     if not self._is_custom_build:
+#       for key in ['train_inputSeq', 'valid_inputSeq']:
+#         if key not in dataset:
+#           raise AttributeError("dataset must contain key `{}` ".format(key))
       
   def train(self, dataset, num_epochs=100, **dirs):
     """
@@ -289,3 +271,4 @@ class DeepKalmanFilter(Model):
     """
     """
     return Model.sample(self, input_data, node, islot=islot)
+  

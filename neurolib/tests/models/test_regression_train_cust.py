@@ -32,10 +32,10 @@ def generate_some_data():
   x = 10.0*np.random.randn(100, 2)
   y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
   xtrain, xvalid, ytrain, yvalid = x[:80], x[80:], y[:80], y[80:]
-  dataset = {'train_features' : xtrain,
-             'train_response' : ytrain,
-             'valid_features' : xvalid,
-             'valid_response' : yvalid}
+  dataset = {'train_observation_in' : xtrain,
+             'train_observation_out' : ytrain,
+             'valid_observation_in' : xvalid,
+             'valid_observation_out' : yvalid}
   return dataset
 
 class RegressionTestTrainCust(tf.test.TestCase):
@@ -55,7 +55,7 @@ class RegressionTestTrainCust(tf.test.TestCase):
                 'activation' : 'leaky_relu',
                 'net_grow_rate' : 1.0 }
     input_dim, output_dim = 2, 1
-    in0 = builder.addInput(input_dim, name="features")
+    in0 = builder.addInput(input_dim, name="observation_in")
     enc1 = builder.addInner(5, directives=enc_dirs)
     enc2 = builder.addInner(1, output_dim, directives=enc_dirs)
     out0 = builder.addOutput(name="prediction")
@@ -86,7 +86,7 @@ class RegressionTestTrainCust(tf.test.TestCase):
                 'activation' : 'leaky_relu',
                 'net_grow_rate' : 1.0 }
     input_dim = 2
-    in0 = builder.addInput(input_dim, name="features")
+    in0 = builder.addInput(input_dim, name="observation_in")
     enc1 = builder.addInner(10, num_inputs=1, directives=enc_dirs)
     enc2 = builder.addInner(10, num_inputs=1, directives=enc_dirs)
     enc3 = builder.addInner(1, num_inputs=2, num_layers=1, activation='linear')
@@ -117,7 +117,7 @@ class RegressionTestTrainCust(tf.test.TestCase):
                 'net_grow_rate' : 1.0 }
     
     input_dim = 2
-    in0 = builder.addInput(input_dim, name='features')
+    in0 = builder.addInput(input_dim, name='observation_in')
     
     cust = builder.createCustomNode(1, 1, name="Custom")
     cust_in1 = cust.addInner(3, directives=enc_dirs)

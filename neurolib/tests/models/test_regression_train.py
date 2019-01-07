@@ -31,10 +31,10 @@ def generate_some_data():
   x = 10.0*np.random.randn(100, 2)
   y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
   xtrain, xvalid, ytrain, yvalid = x[:80], x[80:], y[:80], y[80:]
-  dataset = {'train_features' : xtrain,
-             'train_response' : ytrain,
-             'valid_features' : xvalid,
-             'valid_response' : yvalid}
+  dataset = {'train_observation_in' : xtrain,
+             'train_observation_out' : ytrain,
+             'valid_observation_in' : xvalid,
+             'valid_observation_out' : yvalid}
   return dataset
 
 class RegressionTestTrain(tf.test.TestCase):

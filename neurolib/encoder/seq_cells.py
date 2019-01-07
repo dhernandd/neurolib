@@ -18,7 +18,7 @@ import tensorflow as tf
 from neurolib.encoder.input import NormalInputNode
 from neurolib.encoder.anode import ANode
 from neurolib.builders.static_builder import StaticBuilder
-from neurolib.encoder.normal import NormalTriLNode
+from neurolib.encoder.normal import NormalTriLNode, LDSNode
 from tensorflow.python.framework.tensor_shape import TensorShape  #pylint: disable=no-name-in-module
 
 
@@ -65,6 +65,28 @@ class CustomCell(ANode, tf.nn.rnn_cell.RNNCell):
     """
     """
     raise NotImplementedError
+   
+  def __call__(self, inputs, state, scope=None):
+    """
+    Evaluate the cell encoder on a set of inputs    
+    """
+    try:
+      num_init_states = len(state)
+    except TypeError:
+      num_init_states = 1
+      state = (state,)
+     
+    islot_states = dict(enumerate(state))
+    try:
+      islot_states.update(dict(enumerate(inputs, num_init_states)))
+      inputs = islot_states
+    except TypeError:
+      islot_states.update({num_init_states : inputs})
+      inputs = islot_states
+       
+    output, _ = self.encoder(islot_to_itensor=inputs)
+ 
+    return (output, output)
   
   def compute_output_shape(self, input_shape):
     """
@@ -103,7 +125,7 @@ class TwoEncodersCell(CustomCell):
     super(TwoEncodersCell, self).__init__(num_inputs=num_inputs,
                                           num_outputs=num_outputs,
                                           builder=builder)
-    self.main_output_sizes = state_sizes
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
     self.state_dims = tuple(state_sizes)
     self.secondary_output_slots = []
         
@@ -156,28 +178,6 @@ class TwoEncodersCell(CustomCell):
     cust.commit()
     
     return cust
-    
-  def __call__(self, inputs, state, scope=None):
-    """
-    Evaluate the cell encoder on a set of inputs    
-    """
-    try:
-      num_init_states = len(state)
-    except TypeError:
-      num_init_states = 1
-      state = (state,)
-    
-    islot_states = dict(enumerate(state))
-    try:
-      islot_states.update(dict(enumerate(inputs, num_init_states)))
-      inputs = islot_states
-    except TypeError:
-      islot_states.update({num_init_states : inputs})
-      inputs = islot_states
-      
-    output, _ = self.encoder(islot_to_itensor=inputs)
-
-    return (output, output)
 
   def _get_init_states(self):
     """
@@ -223,7 +223,7 @@ class TwoEncodersCell2(CustomCell):
     super(TwoEncodersCell2, self).__init__(num_inputs=num_inputs,
                                           num_outputs=num_outputs,
                                           builder=builder)
-    self.main_output_sizes = state_sizes
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
     self.state_dims = tuple(state_sizes)
     self.secondary_output_slots = []
         
@@ -245,12 +245,14 @@ class TwoEncodersCell2(CustomCell):
   @property
   def state_size(self):
     """
+    The size of the inner state
     """
     return self.state_dims
   
   @property
   def output_size(self):
     """
+    The size of the output
     """
     return self.state_dims
     
@@ -279,29 +281,29 @@ class TwoEncodersCell2(CustomCell):
     cust.commit()
     
     return cust
-    
-  def __call__(self, inputs, state, scope=None):
-    """
-    Evaluate the cell encoder on a set of inputs    
-    """
-#     print("inputs, state", inputs, state)
-    try:
-      num_init_states = len(state)
-    except TypeError:
-      num_init_states = 1
-      state = (state,)
-    
-    islot_states = dict(enumerate(state))
-    try:
-      islot_states.update(dict(enumerate(inputs, num_init_states)))
-      inputs = islot_states
-    except TypeError:
-      islot_states.update({num_init_states : inputs})
-      inputs = islot_states
-      
-    output, _ = self.encoder(islot_to_itensor=inputs)
-
-    return (output, output)
+#     
+#   def __call__(self, inputs, state, scope=None):
+#     """
+#     Evaluate the cell encoder on a set of inputs    
+#     """
+# #     print("inputs, state", inputs, state)
+#     try:
+#       num_init_states = len(state)
+#     except TypeError:
+#       num_init_states = 1
+#       state = (state,)
+#     
+#     islot_states = dict(enumerate(state))
+#     try:
+#       islot_states.update(dict(enumerate(inputs, num_init_states)))
+#       inputs = islot_states
+#     except TypeError:
+#       islot_states.update({num_init_states : inputs})
+#       inputs = islot_states
+#       
+#     output, _ = self.encoder(islot_to_itensor=inputs)
+# 
+#     return (output, output)
 
   def _get_init_states(self):
     """
@@ -339,9 +341,11 @@ class NormalTriLCell(CustomCell):
       self.state_dims = [[state_sizes]]
     else:
       self.state_dims = state_sizes
-    self.main_output_sizes = self.state_dims
-    self.main_oshape, self.D = self.get_main_oshapes()
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
+    self.main_oshape = self.get_state_full_shapes()
+    self.D = self.get_state_size_ranks()
     self._oslot_to_shape[0] = self.main_oshape
+    
     self._declare_secondary_oshapes()
       
     self.cname = 'NormalTriLCell' if name is None else name
@@ -414,21 +418,23 @@ class NormalTriLCell(CustomCell):
     """
     Evaluate the cell encoder on a set of inputs
     """
-    try:
-      num_init_states = len(state)
-    except TypeError:
-      num_init_states = 1
-      state = (state, )
+#     try:
+#       num_init_states = len(state)
+#     except TypeError:
+#       num_init_states = 1
+#       state = (state, )
+#     
+#     islot_states = dict(enumerate(state))
+#     try:
+#       islot_states.update(dict(enumerate(inputs, num_init_states)))
+#       inputs = islot_states
+#     except TypeError:
+#       islot_states.update({num_init_states : inputs})
+#       inputs = islot_states
+#     output, _ = self.encoder(islot_to_itensor=inputs)
     
-    islot_states = dict(enumerate(state))
-    try:
-      islot_states.update(dict(enumerate(inputs, num_init_states)))
-      inputs = islot_states
-    except TypeError:
-      islot_states.update({num_init_states : inputs})
-      inputs = islot_states
-    
-    output, _ = self.encoder(islot_to_itensor=inputs)
+    output, _ = super(NormalTriLCell, self).__call__(inputs, state, scope=None)
+
     return (output[:], output[0])
     
   def on_linked_as_node_2(self, islot):
@@ -442,6 +448,140 @@ class NormalTriLCell(CustomCell):
   def _get_init_states(self):
     """
     Get the init states of the cell (which will become the init_states of the EvolutionSequence)
+    
+    The init_states are returned as a list indexed by islot.
+    """
+    return [self.ext_builder.addInput(self.state_dims,
+                                      iclass=NormalInputNode,
+                                      **self.directives)]
+
+
+class LDSCell(CustomCell):
+  """
+  A CustomCell with 1 inner state, evolved by means of a stochastic Linear
+  Dynamical System (LDS).
+  """
+  def __init__(self,
+               state_sizes,
+               builder,
+               num_inputs=1,
+               name=None,
+               **dirs):
+    """
+    Initialize the LDSCell.
+    """
+    super(LDSCell, self).__init__(num_inputs=num_inputs,
+                                  num_outputs=4,
+                                  builder=builder)
+    if isinstance(state_sizes, int):
+      self.state_dims = [[state_sizes]]
+    else:
+      self.state_dims = state_sizes
+    
+#     print("sc; self.state_dims", self.state_dims)
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
+    self.main_oshape = self.get_state_full_shapes()
+    self.D = self.get_state_size_ranks()
+    
+    self._oslot_to_shape[0] = self.main_oshape
+    self._declare_secondary_oshapes()
+      
+    self.cname = 'LDSCell' if name is None else name
+
+    self._update_directives(**dirs)
+
+    self.encoder = self.declare_cell_encoder()
+    
+    self.init_states = self._get_init_states()
+
+  def _declare_secondary_oshapes(self):
+    """
+    Declare the cell's secondary output shapes
+    """
+    self.secondary_output_slots = [1, 2, 3]
+    self._oslot_to_shape[1] = self.main_oshape
+    self._oslot_to_shape[2] = self.state_dims[0]*2
+    self._oslot_to_shape[3] = self.state_dims[0]*2
+
+  def _update_directives(self, **dirs):
+    """
+    Update the node directives
+    """
+    self.directives = {'out_0_name' : 'main',
+                       'out_1_name' : 'loc',
+                       'out_2_name' : 'invQ',
+                       'out_3_name' : 'A'}
+    
+    self.directives.update(dirs)
+    
+  @property
+  def state_size(self):
+    """
+    Get self.state_size
+    """
+    return self.state_dims
+  
+  @property
+  def output_size(self):
+    """
+    Set self.output_size
+    """
+    return (TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]*2),
+            TensorShape(self.state_dims[0]*2))
+    
+  def declare_cell_encoder(self):
+    """
+    Declare the cell inner encoder.
+    """
+    builder = self.builder
+    num_inputs = self.num_expected_inputs
+    num_outputs = self.num_expected_outputs
+    
+    cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom")
+    enc_name = cust.addInner(list(self.state_dims),
+                             num_inputs=num_inputs,
+                             node_class=LDSNode,
+                             name='LDSCell')
+    
+    cust.declareIslot(islot=0, innernode_name=enc_name, inode_islot=0)
+    cust.declareOslot(oslot=0, innernode_name=enc_name, inode_oslot=0)
+    cust.declareOslot(oslot=1, innernode_name=enc_name, inode_oslot=1)
+    cust.declareOslot(oslot=2, innernode_name=enc_name, inode_oslot=2)
+    cust.declareOslot(oslot=3, innernode_name=enc_name, inode_oslot=3)
+    cust.commit()
+
+    return cust
+
+  def __call__(self, inputs, state):
+    """
+    Evaluate the cell encoder on a set of inputs
+    """
+#     print("sc; inputs, state", inputs, state)
+#     try:
+#       num_init_states = len(state)
+#     except TypeError:
+#       num_init_states = 1
+#       state = (state, )
+#     
+#     islot_states = dict(enumerate(state))
+#     try:
+#       islot_states.update(dict(enumerate(inputs, num_init_states)))
+#       inputs = islot_states
+#     except TypeError:
+#       islot_states.update({num_init_states : inputs})
+#       inputs = islot_states
+#     output, _ = self.encoder(islot_to_itensor=inputs)
+    
+    output, _ = super(LDSCell, self).__call__(inputs, state, scope=None)
+    
+    return (output[:], output[0])
+  
+  def _get_init_states(self):
+    """
+    Get the init states of the cell (which will become the init_states of the
+    EvolutionSequence)
     
     The init_states are returned as a list indexed by islot.
     """

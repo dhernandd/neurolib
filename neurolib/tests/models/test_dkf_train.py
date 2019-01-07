@@ -43,7 +43,7 @@ class DKFTestTrain(tf.test.TestCase):
   def test_train(self):
     """
     """
-    print("\nTest 1: DKF build")
+    print("\nTest 1: DKF train")
 
     dataset = {}
     fname = my_path + '/datadict_gaussianobs2D'
@@ -51,55 +51,22 @@ class DKFTestTrain(tf.test.TestCase):
       datadict = pickle.load(f)
       Ytrain = datadict['Ytrain']
       Yshape = Ytrain.shape
+      print("Yshape", Yshape)
       dataset['train_observation_0'] = Ytrain
       dataset['valid_observation_0'] = datadict['Yvalid']
       max_steps, input_dims = Yshape[-2], Yshape[-1]
       
     dkf = DeepKalmanFilter(input_dims=[[input_dims]],
                            max_steps=max_steps,
-                           state_dims=[[40], [4]])
+                           batch_size=1,
+                           state_dims=[[40], [4]]) # logs and save implemented
+#                            keep_logs=True,
+#                            save_on_valid_improvement=True,
+#                            root_rslts_dir='./rslts/')
     dkf.build()
     dkf.train(dataset, num_epochs=10)
     
 
 if __name__ == '__main__':
   unittest.main(failfast=True)
-
-#   fname = 'datadict_gaussianobs2D'
-#   dataset = {}
-#   with open(fname, 'rb') as f:
-#     datadict = pickle.load(f)
-#     Ytrain = datadict['Ytrain']
-#     Yshape = Ytrain.shape
-#     print("Yshape", Yshape)
-#     dataset['train_observation_0'] = Ytrain
-#     dataset['valid_observation_0'] = datadict['Yvalid']
-#     max_steps, input_dims = Yshape[-2], Yshape[-1]
-# 
-# 
-#   max_steps = 30
-#   xdim = 20
-#   X = tf.placeholder(tf.float64, [None, max_steps, xdim], 'X')
-#   h1 = fully_connected(X, 32, activation_fn=tf.nn.relu)
-#   h2 = fully_connected(h1, 32, activation_fn=tf.nn.relu)
-#   out = fully_connected(h2, 4, activation_fn=None)
-#   out = tf.reshape(out, [-1, 2, 2])
-#   out = tf.matrix_band_part(out, -1, 0)
-#   covs = tf.matmul(out, out, transpose_a=True)
-#   cost = tf.reduce_sum(tf.log(tf.matrix_determinant(covs)))
-#   
-#   opt = tf.train.AdamOptimizer()
-#   train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-#   gradvars = opt.compute_gradients(cost, train_vars)
-#   train_op = opt.apply_gradients(gradvars)
-#   
-#   sess = get_session()
-#   sess.run(tf.global_variables_initializer())
-#   c = sess.run(cost, feed_dict={'X:0' : Ytrain})
-#   print("cost", c)
-#   for _ in range(5):
-#     sess.run(train_op, feed_dict={'X:0' : Ytrain})
-#     c = sess.run(cost, feed_dict={'X:0' : Ytrain})
-#     print("cost", c)
-  
   

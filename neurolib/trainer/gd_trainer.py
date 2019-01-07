@@ -20,11 +20,10 @@ import tensorflow as tf
 
 from neurolib.utils.utils import addDateTime
 from neurolib.trainer.trainer import Trainer
-from neurolib.trainer.costs import mse, mabsdiff, elbo,\
-  cross_entropy_with_logits
-from neurolib.utils.graphs import get_session
-from neurolib.trainer.tr_utils import batch_iterator_from_dataset,\
-  get_keys_and_data
+from neurolib.trainer.costs import (mse, mabsdiff, elbo, 
+                                    cross_entropy_with_logits,
+                                    entropy, logprob)
+from neurolib.trainer.tr_utils import batch_iterator_from_dataset
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -49,7 +48,9 @@ class GDTrainer(Trainer):
   summaries_dict = {'mse' : mse,
                     'mabsdiff' : mabsdiff,
                     'elbo' : elbo,
-                    'cross_entropy_wlogits' : cross_entropy_with_logits}
+                    'cross_entropy_wlogits' : cross_entropy_with_logits,
+                    'entropy' : entropy,
+                    'logprob' : logprob}
   opt_dict = {'adam' : tf.train.AdamOptimizer,
               'adagrad' : tf.train.AdagradOptimizer,
               'momentum' : tf.train.MomentumOptimizer,
@@ -60,8 +61,9 @@ class GDTrainer(Trainer):
                cost,
                name='test',
                batch_size=1,
-               save=False,
-               rslt_dir=None,
+               keep_logs=False,
+               save_on_valid_improvement=False,
+               root_rslts_dir=None,
                **dirs):
     """
     Initialize a GDTrainer
@@ -75,14 +77,24 @@ class GDTrainer(Trainer):
     self.cost_name = cost[0]
     self.cost_inputs = cost[1]
     
-    self.rslt_dir = rslt_dir
+    if save_on_valid_improvement:
+      assert root_rslts_dir is not None, (
+        "You must provide a string for `root_rslts_dir if " 
+        "`save_on_valid_improvememt` is set to True")
+      self.rslt_dir = root_rslts_dir + self.name + '/' + addDateTime() + '/'
+      if not os.path.exists(self.rslt_dir):
+        os.makedirs(self.rslt_dir)
+
     self._update_default_directives(**dirs)
     
     self._define_train_op()
     
-    self.save = save
-    if save:
+    self.save = save_on_valid_improvement
+    if save_on_valid_improvement:
       self.saver = tf.train.Saver(tf.global_variables())
+    
+    self.keep_logs = keep_logs
+    if keep_logs:
       self.writer = tf.summary.FileWriter(addDateTime('./logs/log'))
 
   def _update_default_directives(self, **dirs):
@@ -90,7 +102,7 @@ class GDTrainer(Trainer):
     Update the default directives.
     """
     self.directives = {'optimizer' : 'adam',
-                       'lr' : 1e-4,
+                       'lr' : 1e-3,
                        'summaries' : []}
     self.directives.update(dirs)
     self.directives['summaries'].append(self.cost)
@@ -120,22 +132,6 @@ class GDTrainer(Trainer):
     gradsvars = opt.compute_gradients(self.cost, self.train_vars)
     self.train_op = opt.apply_gradients(gradsvars, global_step=self.train_step,
                                         name='train_op')
-    
-  def make_feed_dict(self, dataset):
-    """
-    Make a feed_dict for sess.run from a dataset.
-    
-    In particular, add inputs for all the dummy variables defined by the Builder
-    associated to this model
-    """
-    _, data = get_keys_and_data(dataset)
-    batch_size = data[0].shape[0]
-    for key in self.builder.dummies:
-#       T = tf.get_default_graph().get_tensor_by_name(key)
-#       T_sh = T.shape.as_list()[1:]
-      dummy_data = np.zeros([batch_size] + self.builder.dummies[key][1:])
-      dataset[key] = dummy_data
-    return dataset
 
   def prepare_datasets(self, dataset):
     """
@@ -160,7 +156,31 @@ class GDTrainer(Trainer):
     return {'train' : train_dataset,
             'valid' : valid_dataset, 
             'test' : test_dataset}
-
+    
+  def make_feed_dict(self, dataset, dataname='observation'):
+    """
+    Make a feed_dict for sess.run from a dataset.
+    
+    In particular, add inputs for all the dummy variables defined by the Builder
+    associated to this model
+    """
+#     _, data = get_keys_and_data(dataset)
+#     batch_size_list = 
+#     for key in self.builder.dummies:
+#       dataset.pop(key, None)
+    data_key_prefix = self.builder.scope + '/' + dataname
+    obskey = next(key for key in dataset if key.startswith(data_key_prefix))
+#     print("obskey", obskey)
+    batch_size = dataset[obskey].shape[0]
+#     print("batch_size", batch_size)
+#     batch_size = data[0].shape[0]
+    for key in self.builder.dummies:
+#       T = tf.get_default_graph().get_tensor_by_name(key)
+#       T_sh = T.shape.as_list()[1:]
+#       dummy_data = np.zeros([batch_size] + self.builder.dummies[key][1:])
+      dataset[key] = np.array([batch_size], dtype=np.int32)
+      
+    return dataset
         
   def update(self, sess, dataset, batch_size):
     """
@@ -170,8 +190,9 @@ class GDTrainer(Trainer):
     TODO: Get rid of the feed_dict in favor of tensorflow Queues! Add
     multithreading capabilities
     """
+    for key in self.builder.dummies: dataset.pop(key, None)
     dataset_iter = batch_iterator_from_dataset(dataset,
-                                               self.batch_size)
+                                               batch_size)
     for batch_dct in dataset_iter:
       feed_dict = self.make_feed_dict(batch_dct)
       sess.run([self.train_op], feed_dict=feed_dict)
@@ -183,10 +204,12 @@ class GDTrainer(Trainer):
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
     
-    batch_size = batch_size or self.batch_size or 1
     merged_summaries = self.merge_summaries()
-#     graph = tf.get_default_graph()
+
+    batch_size = batch_size or self.batch_size or 1
+#     dummy_fd = self.builder.make_dummy_fd(batch_size)
     sess = tf.Session(graph=tf.get_default_graph())
+#     sess.run(tf.global_variables_initializer(), feed_dict=dummy_fd)
     sess.run(tf.global_variables_initializer())
     for ep in range(num_epochs):
       if ep == 0:
@@ -201,10 +224,10 @@ class GDTrainer(Trainer):
       ctrain = self.reduce_op_from_batches(sess, 
                                            [self.cost],
                                            train_dataset)
-      print("cost:", ctrain)
+      print("ep, cost: {}, {}".format(ep, ctrain))
       
       # Add summaries
-      if 'summaries' in self.directives and self.save:
+      if self.keep_logs:
         self.run_summaries(sess, train_dataset, merged_summaries, ep)
       
       # Save on validation improvement
@@ -215,11 +238,9 @@ class GDTrainer(Trainer):
         if new_cvalid < cvalid:
           cvalid = new_cvalid
           print('Valid. cost:', cvalid, '... Saving...')
-          rlt_dir = self.rslt_dir + self.name + '/' + addDateTime() + '/'
-          if not os.path.exists(rlt_dir):
-            os.makedirs(rlt_dir)
+          rslt_dir = self.rslt_dir
           self.saver.save(sess,
-                          rlt_dir,
+                          rslt_dir+self.builder.scope,
                           global_step=self.train_step)
     sess.close()
   
@@ -246,6 +267,7 @@ class GDTrainer(Trainer):
       return sess.run(ops, feed_dict=fd_dct)
     else:
       reduced = 0
+      for key in self.builder.dummies: dataset.pop(key, None)
       dataset_iter = batch_iterator_from_dataset(dataset,
                                                  self.batch_size,
                                                  shuffle=False)

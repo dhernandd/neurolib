@@ -23,8 +23,8 @@ from neurolib.models.predictor_rnn import PredictorRNN
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS: 3
-range_from = 1
-range_to = 2
+range_from = 0
+range_to = 3
 tests_to_run = list(range(range_from, range_to))
 test_to_run = 10
 
@@ -39,10 +39,10 @@ def generate_echo_data(length, echo_step, max_steps):
   X = np.reshape(x, [-1, max_steps, 1])
   Y = np.reshape(y, [-1, max_steps, 1])
 
-  dataset = {'train_inputSeq' : X[:300],
-             'train_outputSeq' : Y[:300],
-             'valid_inputSeq' : X[300:],
-             'valid_outputSeq' : Y[300:]}
+  dataset = {'train_observation_in' : X[:300],
+             'train_observation_out' : Y[:300],
+             'valid_observation_in' : X[300:],
+             'valid_observation_out' : Y[300:]}
 
   return dataset
 
@@ -58,10 +58,10 @@ def generate_echo_data_cat(num_labels, length, echo_step, max_steps):
   X = np.reshape(x, [-1, max_steps, 1])
   Y = np.reshape(y, [-1, max_steps, 1])
 
-  dataset = {'train_inputSeq' : X[:300],
-             'train_outputSeq' : Y[:300],
-             'valid_inputSeq' : X[300:],
-             'valid_outputSeq' : Y[300:]}
+  dataset = {'train_observation_in' : X[:300],
+             'train_observation_out' : Y[:300],
+             'valid_observation_in' : X[300:],
+             'valid_observation_out' : Y[300:]}
 
   return dataset
 

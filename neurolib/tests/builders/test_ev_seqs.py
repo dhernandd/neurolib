@@ -20,7 +20,6 @@ import tensorflow as tf
 
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.encoder.evolution_sequence import NonlinearDynamicswGaussianNoise
-from neurolib.utils.graphs import get_session
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -80,27 +79,19 @@ class EvolutionSequenceTest(tf.test.TestCase):
     os1 = builder.addOutputSequence()
     builder.addDirectedLink(is1, evs1, islot=1)
     builder.addDirectedLink(evs1, os1)
-    
+     
     Z = tf.placeholder(tf.float64, [None, 25, 2], name='Z')
-
+ 
     builder.build()
-    print(builder.nodes)
     evnode = builder.nodes[evs1]
     entropy = evnode.entropy()
     log_prob = evnode.log_prob(Z)
-    
-    print(entropy)
-    print("builder.dummies", builder.dummies)
-    print("Y.shape", Y.shape)
-    sess = get_session()
-    sess.run(tf.global_variables_initializer())
-    ent = sess.run(entropy, feed_dict={'Test/inputSeq:0' : Y,
-                                       'Normal_2_dummy:0' : np.zeros((32, 2))})
-    lp = sess.run(log_prob, feed_dict={'Test/inputSeq:0' : Y,
-                                       'Normal_2_dummy:0' : np.zeros((32, 2)),
-                                       'Z:0' : Y2})
-#     print('entropy', ent)
-    print('entropy, logprob', ent, lp)
+    print(builder.dummies)
+      
+    lp = builder.eval(log_prob, feed_dict={'Test/inputSeq:0' : Y,
+                                           'Z:0' : Y2})
+    e = builder.eval(entropy, feed_dict={'Test/inputSeq:0' : Y})
+    print('entropy, logprob', np.sum(lp), np.sum(e))
     
 if __name__ == "__main__":
   unittest.main(failfast=True)

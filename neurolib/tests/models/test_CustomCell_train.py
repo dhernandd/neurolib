@@ -25,11 +25,10 @@ from neurolib.trainer.gd_trainer import GDTrainer
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 2
+# NUM_TESTS : 4
 range_from = 0
 range_to = 4
-# tests_to_run = list(range(range_from, range_to))
-tests_to_run = [1,3]
+tests_to_run = list(range(range_from, range_to))
 test_to_run = 10
 
 def generate_echo_data(length, echo_step, max_steps, withY=True):
@@ -44,8 +43,8 @@ def generate_echo_data(length, echo_step, max_steps, withY=True):
   Y = np.reshape(y, [-1, max_steps, 1])
   
   train_idx = 4*length//(5*max_steps)
-  dataset = {'train_inputSeq' : X[:train_idx],
-             'valid_inputSeq' : X[train_idx:]}
+  dataset = {'train_observation' : X[:train_idx],
+             'valid_observation' : X[train_idx:]}
   if not withY:
     return dataset
   dataset.update({'train_outputSeq' : Y[:train_idx],
@@ -65,8 +64,8 @@ def generate_echo_data_cat(num_labels, length, echo_step, max_steps, withY=True)
   Y = np.reshape(y, [-1, max_steps, 1])
 
   train_idx = 4*length//(5*max_steps)
-  dataset = {'train_inputSeq' : X[:train_idx],
-             'valid_inputSeq' : X[train_idx:]}
+  dataset = {'train_observation' : X[:train_idx],
+             'valid_observation' : X[train_idx:]}
   if not withY:
     return dataset
   
@@ -120,7 +119,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     
     builder = SequentialBuilder(max_steps=max_steps,
                                 scope=scope)
-    is1 = builder.addInputSequence([[1]], name='inputSeq')
+    is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3],[3]],
                                        num_inputs=3,
                                        num_outputs=2,
@@ -157,7 +156,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     
     builder = SequentialBuilder(max_steps=max_steps,
                                 scope=scope)
-    is1 = builder.addInputSequence([[1]], name='inputSeq')
+    is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3]],
                                        num_inputs=2,
                                        num_outputs=3,
@@ -200,7 +199,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     
     builder = SequentialBuilder(max_steps=max_steps,
                                 scope=scope)
-    is1 = builder.addInputSequence([[1]], name='inputSeq')
+    is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3],[3]],
                                        num_inputs=3,
                                        num_outputs=2,
@@ -221,6 +220,7 @@ class CustomCellTrainTest(tf.test.TestCase):
                         batch_size=batch_size)
     dataset = trainer.prepare_datasets(dataset)
     trainer.train(dataset, num_epochs=10)
+    
     
 if __name__ == '__main__':
   unittest.main(failfast=True) 

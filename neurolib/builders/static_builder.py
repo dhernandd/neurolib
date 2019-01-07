@@ -24,7 +24,6 @@ from neurolib.encoder.input import PlaceholderInputNode  # @UnusedImport
 from neurolib.encoder.output import OutputNode
 from neurolib.utils.utils import check_name
 from neurolib.encoder.basic import CopyNode
-from neurolib.utils.graphs import get_session
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -233,7 +232,8 @@ class StaticBuilder(Builder):
     
     # D
     self.adj_matrix[node1.label][node2.label] = 1
-    self.adj_list[node1.label].append(node2.label)
+    if node2.label not in self.adj_list[node1.label]: 
+      self.adj_list[node1.label].append(node2.label)
       
     # E
     if node1.num_expected_outputs > 1:
@@ -248,17 +248,20 @@ class StaticBuilder(Builder):
                          "from the in-node is ambiguous.\n You must specify the " 
                          "input slot")
     exchanged_shape = node1._oslot_to_shape[oslot]
-    node1._child_label_to_oslot[node2.label] = oslot
+#     node1._child_label_to_slot_pairs[node2.label] = oslot
+    node1._child_label_to_slot_pairs[node2.label].append((oslot, islot))
 
     if oslot in node1.free_oslots:
       node1.num_declared_outputs += 1
       node1.free_oslots.remove(oslot)
     
     node2._islot_to_shape[islot] = exchanged_shape
-    node2._parent_label_to_islot[node1.label] = islot
+#     node2._parent_label_to_islot[node1.label] = islot
+    node2._parent_label_to_islot[node1.label].append(islot)
     node2.num_declared_inputs += 1
     node2.free_islots.remove(islot)
-    node2._islot_to_name[islot] = (node1._oslot_to_name[oslot] if name is None
+#     print("stb; node1.oslot_to_name", node1.oslot_to_name, node1.name)
+    node2.islot_to_name[islot] = (node1.oslot_to_name[oslot] if name is None
                                    else name)
 
     # Initialize _built_parents for the child node.
@@ -276,28 +279,15 @@ class StaticBuilder(Builder):
     """
     Merge two or more nodes
     """
-    print("st bld; nodes:", nodes)
     nodes = [self.nodes[node_name] for node_name in nodes]
     merger = merge_class(self,
                          state_size,
                          nodes,
                          **dirs)
     name = merger.name
-    self.nodes[name] = merger    
+    self.nodes[name] = merger
+    self._label_to_node[merger.label] = merger
     
-    nnodes = self.num_nodes
-    if nnodes > len(self.adj_matrix):
-        l = len(self.adj_matrix)
-        for row in range(l):
-          self.adj_matrix[row].extend([0]*(nnodes-l))
-        for _ in range(nnodes-l):
-          self.adj_matrix.append([0]*nnodes)
-          self.adj_list.append([])
-    for node in nodes:
-      self.adj_matrix[node.label][merger.label] = 1
-      self.adj_list[node.label].append(merger.label)
-      merger._built_parents[node.label] = False
-
     return name
   
   def check_graph_correctness(self):
@@ -357,7 +347,7 @@ class StaticBuilder(Builder):
     """
     return self.nodes[name].label
   
-  def get_output(self,
+  def build_output(self,
                  inputs=None,
                  islot_to_itensor=None,
                  custom_node=None,
@@ -413,9 +403,6 @@ class StaticBuilder(Builder):
     with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE): 
       # A.
       if custom_node is not None:
-#         for inner_node_data, islot in custom_node._islot_to_inner_node_islot.inv.items():
-#           inode_name, inode_islot = inner_node_data
-#           self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
         for islot, inner_node_data in custom_node._islot_to_inner_node_islot.items():
           for inode_name, inode_islot in inner_node_data:
             self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
@@ -443,20 +430,15 @@ class StaticBuilder(Builder):
             child_node._built_parents[cur_node_label] = True
             
             # F.
-            oslot = cur_node._child_label_to_oslot[child_label]
-            islot = child_node._parent_label_to_islot[cur_node_label]
-            
-            # G.
-#             print((child_node.name, islot), (cur_node.name, oslot))
-#             print(cur_node.get_outputs()[oslot])
-            child_node._islot_to_itensor[islot] = cur_node.get_outputs()[oslot]
-            if isinstance(child_node, CustomNode):
-#               enc_name, enc_islot = child_node._islot_to_inner_node_islot[islot]
-#               enc = child_node.in_builder.nodes[enc_name]
-#               enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
-              for enc_name, enc_islot in child_node._islot_to_inner_node_islot[islot]:
-                enc = child_node.in_builder.nodes[enc_name]
-                enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
+            for oslot, islot in cur_node._child_label_to_slot_pairs[child_label]:
+              child_node._islot_to_itensor[islot] = cur_node.get_output(oslot)
+
+              if isinstance(child_node, CustomNode):
+                for enc_name, enc_islot in child_node._islot_to_inner_node_islot[islot]:
+                  enc = child_node.in_builder.nodes[enc_name]
+  #                 enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
+#                   enc._islot_to_itensor[enc_islot] = cur_node.build_output(oslot)
+                  enc._islot_to_itensor[enc_islot] = child_node._islot_to_itensor[islot]
             
             # H.
             if isinstance(child_node, OutputNode):
@@ -477,38 +459,52 @@ class StaticBuilder(Builder):
       else:
         result_as_list = None
       
-#     print("result_as_list", result_as_list)
-#     print("result", result)
     return result_as_list, result
 
   def build(self):
     """
     """
-    self.get_output()
+    self.build_output()
     
   def make_dummy_fd(self, batch_size):
     """
     """
-    print("st_b; self.dummies.items()", self.dummies.items())
-    return {key : np.zeros([batch_size] + value[1:]) for key, value in self.dummies.items()}
-    
-  def eval(self, node, feed_dict, oslot=0, lmbda=None):
+    return {key : np.array([batch_size], dtype=np.int32) for key in self.dummies}
+#     return {key : np.zeros([batch_size] + value[1:]) for key, value in self.dummies.items()}
+  
+  def get_node_output(self, node_name, oslot=0):
     """
     """
-    otensor = self.nodes[node].get_outputs()[oslot]
-    
-    batch_size = list(feed_dict.values())[0].shape[0]
-#     print("st_b; list(feed_dict.values())[0].shape", list(feed_dict.values())[0].shape)
+    return self.nodes[node_name].get_output(oslot)
+  
+  def eval(self, otensor, feed_dict=None, lmbda=None):
+    """
+    Evaluate a tensor
+    """
+    if feed_dict is None:
+      feed_dict = {}
+      batch_size = 2
+    else:
+      batch_size = list(feed_dict.values())[0].shape[0]
     dummy_feed = self.make_dummy_fd(batch_size)
-#     print("st_b; dummy_feed", dummy_feed)
+    print("dummy_feed", dummy_feed)
+#     assert False
     feed_dict.update(dummy_feed)
-    
-#     print("st_b; feed_dict", feed_dict)
-    sess = get_session()
+
+    sess = tf.Session(graph=tf.get_default_graph())
+#     sess.run(tf.global_variables_initializer(), feed_dict=feed_dict)
     sess.run(tf.global_variables_initializer())
     if lmbda is not None:
       rslt = sess.run(lmbda(otensor), feed_dict=feed_dict)
     else:
+      print("otensor", otensor)
       rslt = sess.run(otensor, feed_dict=feed_dict)
     return rslt
+  
+  def eval_output(self, node, oslot=0, feed_dict=None, lmbda=None):
+    """
+    Evaluate the output tensor of a node
+    """
+    otensor = self.nodes[node].get_output(oslot)
     
+    return self.eval(otensor, feed_dict=feed_dict, lmbda=lmbda)

@@ -22,15 +22,14 @@ def mse(node_dict, node_names):
   Define the Mean Squared Error between two Outputs of the Model Graph
   """
   try:
-#     print(node_dict)
     nodeY = node_dict[node_names[0]]
     nodeX = node_dict[node_names[1]]
   except AttributeError:
     raise AttributeError("You must define two OutputNodes, named {} and {}, for "
                          "'mse' training".format(node_names[0], node_names[1]))
 
-  Y = nodeY.get_inputs()[0]
-  X = nodeX.get_inputs()[0]
+  Y = nodeY.get_input(0)
+  X = nodeX.get_input(0)
   
   return tf.reduce_mean((Y - X)**2, name="mse")
 
@@ -45,8 +44,8 @@ def mabsdiff(node_dict, node_names):
     raise AttributeError("You must define two OutputNodes, named {} and {}, for "
                          "'mse' training".format(node_names[0], node_names[1]))
 
-  Y = nodeY.get_inputs()[0]
-  X = nodeX.get_inputs()[0]
+  Y = nodeY.get_input(0)
+  X = nodeX.get_input(0)
   
   return tf.reduce_mean(tf.abs(Y - X)**2, name="mabsdiff")
 
@@ -60,8 +59,8 @@ def cross_entropy_with_logits(node_dict, node_names):
     raise AttributeError("You must define two OutputNodes, named 'prediction' and "
                          "'response', for 'cross_entropy' training")
 
-  Y = nodeY.get_inputs()[0]
-  X = nodeX.get_inputs()[0]
+  Y = nodeY.get_input(0)
+  X = nodeX.get_input(0)
   
   Y = tf.squeeze(Y, axis=-1)
   ce = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=Y,
@@ -85,6 +84,22 @@ def elbo(node_dict, node_names):
                          "'Generative', for 'elbo' training")
     
   nodeY = node_dict[node_names[2]]
-  Y = nodeY.get_outputs()[0]
+  Y = nodeY.get_output(0)
   
-  return tf.reduce_sum(-node_rec.entropy() - node_gen.log_prob(Y))
+  return tf.reduce_sum(-node_rec.entropy()) - tf.reduce_sum(node_gen.log_prob(Y))
+#   return tf.reduce_sum(- node_gen.log_prob(Y))
+
+def entropy(node_dict, node_names):
+  """
+  """
+  node = node_dict[node_names[0]]
+  return tf.reduce_sum(node.entropy())
+
+def logprob(node_dict, node_names):
+  """
+  """
+  node = node_dict[node_names[0]]
+  nodeY = node_dict[node_names[1]]
+  Y = nodeY.get_output(0)
+  
+  return node.log_prob(Y)

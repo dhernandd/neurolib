@@ -56,9 +56,11 @@ class InnerNode(ANode):
     self.is_sequence = is_sequence
 
     # Slot names
-    self._oslot_to_name[0] = 'main'
+    self.oslot_to_name[0] = 'main_' + str(self.label) + '_0'
+    
+    self.directives = {'output_0_name' : 'main'}
                   
-  def __call__(self, inputs=None, islot_to_itensor=None):
+  def __call__(self, inputs=None):
     """
     Call the node transformation on inputs, return the outputs.
     """

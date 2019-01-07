@@ -22,7 +22,7 @@ from neurolib.builders.static_builder import StaticBuilder
 
 class Regression(Model):
   """
-  The Regression Model implements regression with arbitrary features. It is
+  The Regression Model implements regression with arbitrary observation_in. It is
   specified by defining a single Model Graph (MG), with a single InputNode and a
   single OutputNode. The MG itself is an acyclic directed graph formed of any
   combination of deterministic encoders nodes.
@@ -40,7 +40,7 @@ class Regression(Model):
   E1[d_0 -> d_1], E2[d_0 -> d_2] => O1[d_1 + d_2 -> ]
   
   Any user defined Regression must respect the names of the mandatory Input and
-  Output nodes, which are fixed to "features" and "response" respectively. 
+  Output nodes, which are fixed to "observation_in" and "response" respectively. 
   
   The default Regression instance builds a Model graph with just one inner
   Encoder
@@ -63,7 +63,7 @@ class Regression(Model):
     Initialize the Regression Model
     
     Args:
-      input_dim (int): The number of features (dimension of the input variable)
+      input_dim (int): The number of observation_in (dimension of the input variable)
       
       output_dim (int): The output dimension
       
@@ -121,7 +121,7 @@ class Regression(Model):
     if builder is None:
       self.builder = builder = StaticBuilder(scope=self._main_scope)
       
-      in0 = builder.addInput(self.input_dim, name="features", **dirs)
+      in0 = builder.addInput(self.input_dim, name="observation_in", **dirs)
       enc1 = builder.addInner(1, num_inputs=self.output_dim, **dirs)
       out0 = builder.addOutput(name="prediction")
 
@@ -132,7 +132,7 @@ class Regression(Model):
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
-    in1 = builder.addInput(self.output_dim, name="i_response")
+    in1 = builder.addInput(self.output_dim, name="observation_out")
     out1 = builder.addOutput(name="response")
     builder.addDirectedLink(in1, out1)
 
@@ -162,8 +162,8 @@ class Regression(Model):
     """
     Check that the provided dataset adheres to the Regression class specification
     """
-    must_have_keys = ['train_features', 'train_response',
-                      'valid_features', 'valid_response']
+    must_have_keys = ['train_observation_in', 'train_observation_out',
+                      'valid_observation_in', 'valid_observation_out']
     for key in must_have_keys:
       if key not in dataset:
         raise AttributeError("dataset does not have key {}".format(key))
@@ -174,9 +174,9 @@ class Regression(Model):
     
     The dataset, provided by the client, should have keys
     
-    train_features, train_response
-    valid_features, valid_response
-    test_features, test_response
+    train_observation_in, train_observation_out
+    valid_observation_in, valid_observation_out
+    test_observation_in, test_observation_out
     """
     self._check_dataset_correctness(dataset)
 

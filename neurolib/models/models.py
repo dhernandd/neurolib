@@ -19,6 +19,7 @@ from abc import abstractmethod
 import numpy as np
 
 from neurolib.utils.graphs import get_session
+
 # pylint: disable=bad-indentation, no-member, protected-access
 
 class Model(abc.ABC):
@@ -60,7 +61,8 @@ class Model(abc.ABC):
     micromanaged...
     
     TODO: I also want to manually manage the graphs for when people want to run
-    two models and compare for example.
+    two models and compare for example. Although, a comparison is naturally
+    external to each model. I think that what I want to do in fact is produce plo
     """
     self.inputs = {}
     self.outputs = {}
@@ -172,3 +174,10 @@ class Model(abc.ABC):
         res[i:i+self.batch_size] = r
         i += 1
       return res
+  
+  def extract_dirs(self, prefix):
+    """
+    Make a new dictionary with directives matching a prefix
+    """
+    return {'_'.join(key.split('_')[1:]) : value for key, value 
+            in self.directives.items() if key.startswith(prefix)}

@@ -40,10 +40,10 @@ def generate_echo_data(length, echo_step, max_steps):
   X = np.reshape(x, [-1, max_steps, 1])
   Y = np.reshape(y, [-1, max_steps, 1])
 
-  dataset = {'train_inputSeq' : X[:300],
-             'train_outputSeq' : Y[:300],
-             'valid_inputSeq' : X[300:],
-             'valid_outputSeq' : Y[300:]}
+  dataset = {'train_observation_in' : X[:300],
+             'train_observation_out' : Y[:300],
+             'valid_observation_in' : X[300:],
+             'valid_observation_out' : Y[300:]}
 
   return dataset
 
@@ -59,10 +59,10 @@ def generate_echo_data_cat(num_labels, length, echo_step, max_steps):
   X = np.reshape(x, [-1, max_steps, 1])
   Y = np.reshape(y, [-1, max_steps, 1])
 
-  dataset = {'train_inputSeq' : X[:300],
-             'train_outputSeq' : Y[:300],
-             'valid_inputSeq' : X[300:],
-             'valid_outputSeq' : Y[300:]}
+  dataset = {'train_observation_in' : X[:300],
+             'train_observation_out' : Y[:300],
+             'valid_observation_in' : X[300:],
+             'valid_observation_out' : Y[300:]}
 
   return dataset
 
@@ -94,7 +94,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     ninputs_evseq_1 = ninputs_evseq_2 = 2
     scope = 'RNNPredictor'
     builder = SequentialBuilder(max_steps=25, scope=scope)
-    is1 = builder.addInputSequence(input_dims, name='inputSeq')
+    is1 = builder.addInputSequence(input_dims, name='observation_in')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
                                         ev_seq_class='rnn',
@@ -135,7 +135,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 2
     builder = SequentialBuilder(max_steps=25, scope=scope)
-    is1 = builder.addInputSequence(input_dims, name='inputSeq')
+    is1 = builder.addInputSequence(input_dims, name='observation_in')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
                                         ev_seq_class='rnn',
@@ -178,7 +178,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 2
     builder = SequentialBuilder(max_steps=25, scope=scope)
-    is1 = builder.addInputSequence(input_dims, name='inputSeq')
+    is1 = builder.addInputSequence(input_dims, name='observation_in')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
                                         ev_seq_class='rnn',
@@ -222,7 +222,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     state_dims_2 = [[10]]
     ninputs_evseq_1, ninputs_evseq_2 = 3, 3
     builder = SequentialBuilder(max_steps=25, scope=scope)
-    is1 = builder.addInputSequence(input_dims, name='inputSeq')
+    is1 = builder.addInputSequence(input_dims, name='observation_in')
     evs1 = builder.addEvolutionSequence(state_sizes=state_dims_1,
                                         num_inputs=ninputs_evseq_1,
                                         ev_seq_class='rnn',

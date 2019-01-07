@@ -15,41 +15,54 @@
 # ==============================================================================
 import unittest
 
+# import numpy as np
 import tensorflow as tf
-
-from neurolib.models.dkf import DeepKalmanFilter
+from neurolib.builders.static_builder import StaticBuilder
+from neurolib.encoder.normal import LDSNode, NormalPrecisionNode
+from neurolib.builders.sequential_builder import SequentialBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 2
-range_from = 1
+range_from = 0
 range_to = 2
 tests_to_run = list(range(range_from, range_to))
 
-class DKFTestBuild(tf.test.TestCase):
+class NormalNodeTest(tf.test.TestCase):
   """
-  """  
+  """
   def setUp(self):
     """
     """
     tf.reset_default_graph()
-  
+
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_init(self):
+  def test_LDSNode(self):
     """
     """
-    print("\nTest 0: DKF initialization")
-    DeepKalmanFilter(input_dims=[[3]],
-                     state_dims=[[5], [4]])
-  
+    builder = StaticBuilder(scope='Main')
+    i1 = builder.addInput([[3]])
+    in1 = builder.addInner([[3]], node_class=LDSNode)
+    o1 = builder.addOutput()
+    builder.addDirectedLink(i1, in1)
+    builder.addDirectedLink(in1, o1)
+    
+    builder.build()
+    
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
-  def test_build(self):
+  def test_NormalPrecisionNode_init(self):
     """
+    Test Merge Node initialization
     """
-    print("\nTest 1: DKF build")
-    dkf = DeepKalmanFilter(input_dims=[[3]],
-                           state_dims=[[5], [4]])
-    dkf.build()
+    builder = SequentialBuilder(max_steps=30,
+                                scope='Main')
+    is1 = builder.addInputSequence([[3]])
+    ins2 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
+    os1 = builder.addOutputSequence()
+    builder.addDirectedLink(is1, ins2)
+    builder.addDirectedLink(ins2, os1)
+    
+    builder.build()
 
 
 if __name__ == '__main__':
