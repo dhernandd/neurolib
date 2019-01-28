@@ -23,9 +23,9 @@ from neurolib.encoder.merge import MergeSeqsNormalLDSEv
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 3
+# NUM_TESTS : 2
 run_from = 0
-run_to = 1
+run_to = 2
 tests_to_run = list(range(run_from, run_to))
 
 class MergeEvSeqsFLDSTest(tf.test.TestCase):
@@ -43,16 +43,31 @@ class MergeEvSeqsFLDSTest(tf.test.TestCase):
     """
     builder = SequentialBuilder(max_steps=30,
                                 scope='Main')
+    ins1 = builder.addInnerSequence([[3]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode)
+    evs1 = builder.addEvolutionSequence([[3]],
+                                        num_inputs=1,
+                                        cell_class=LDSCell)
+    builder.addMergeNode([[3]],
+                         node_dict={'in_seq' : ins1, 'ev_seq' : evs1},
+                         merge_class=MergeSeqsNormalLDSEv)
+
+  @unittest.skipIf(1 not in tests_to_run, "Skipping")
+  def test_merge_build(self):
+    """
+    Test Merge Node Build
+    """
+    builder = SequentialBuilder(max_steps=30,
+                                scope='Main')
     is1 = builder.addInputSequence([[3]])
     ins1 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
     evs1 = builder.addEvolutionSequence([[3]],
                                         num_inputs=1,
-                                        num_outputs=1,
                                         cell_class=LDSCell)
-    print("ins1", ins1)
     m1 = builder.addMergeNode([[3]],
-                              [ins1, evs1],
-                              MergeSeqsNormalLDSEv)
+                              node_dict={'in_seq' : ins1, 'ev_seq' : evs1},
+                              merge_class=MergeSeqsNormalLDSEv)
     ins2 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
     os1 = builder.addOutputSequence()
     builder.addDirectedLink(is1, ins1)

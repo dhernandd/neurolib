@@ -27,7 +27,6 @@ from neurolib.encoder.evolution_sequence import NonlinearDynamicswGaussianNoise
 range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
-test_to_run = 10
 
 def generate_echo_data(length, echo_step, max_steps, withY=True):
   """
@@ -73,8 +72,8 @@ class EvolutionSequenceTest(tf.test.TestCase):
     
     is1 = builder.addInputSequence(idims, name='inputSeq')
     evs1 = builder.addEvolutionSequence([[2]],
-                                        num_inputs=2,
                                         ev_seq_class=NonlinearDynamicswGaussianNoise,
+                                        num_inputs=2,
                                         name='EvSeq')
     os1 = builder.addOutputSequence()
     builder.addDirectedLink(is1, evs1, islot=1)

@@ -39,7 +39,9 @@ class OutputNode(ANode):
   
   def __init__(self,
                builder,
-               name=None):
+               name=None,
+               name_prefix=None,
+               is_sequence=False):
     """
     Initialize the OutputNode
     
@@ -49,15 +51,20 @@ class OutputNode(ANode):
 
       name (str): A unique name for this node.
     """
-    super(OutputNode, self).__init__()
-
-    self.builder = builder
-    self.label = builder.num_nodes
-    builder.num_nodes += 1
-    
-    self.name = "Out_" + str(self.label) if name is None else name
+    print("name, name_prefix", name, name_prefix)
+    name_prefix = name_prefix or 'Out'
+    name_prefix = self._set_name_or_get_name_prefix(name,
+                                                    name_prefix=name_prefix)
+    super(OutputNode, self).__init__(builder,
+                                     is_sequence,
+                                     name_prefix=name_prefix)
     
     self.free_islots = list(range(self.num_expected_inputs))
+    
+  def _update_directives(self, **dirs):
+    """
+    """
+    
     
   def _build(self):
     """
@@ -72,22 +79,27 @@ class OutputNode(ANode):
     """
     self._islot_to_itensor[0] = tf.identity(self._islot_to_itensor[0],
                                             name=self.name)
-    
     self._is_built = True
     
-class OutputSequence(OutputNode):
-  """
-  """  
-  def __init__(self,
-               builder,
-               name=None):
+  def __call__(self):
     """
-    Initialize the OutputSequence. This is the same as an OutputNode but for the name
+    """
+    raise NotImplementedError("OutputNodes are not callable")
+  
+# class OutputSequence(OutputNode):
+#   """
+#   """  
+#   def __init__(self,
+#                builder,
+#                name=None):
+#     """
+#     Initialize the OutputSequence. This is the same as an OutputNode but for the name
+#     
+#     Args:
+#       label (int): A unique integer identifier for the node.
+#       
+#       name (str): A unique name for this node.
+#     """
+#     super(OutputSequence, self).__init__(builder, name)
+#     name = "OutSeq_" + str(self.label) if name is None else name
     
-    Args:
-      label (int): A unique integer identifier for the node.
-      
-      name (str): A unique name for this node.
-    """
-    super(OutputSequence, self).__init__(builder, name)
-    name = "OutSeq_" + str(self.label) if name is None else name

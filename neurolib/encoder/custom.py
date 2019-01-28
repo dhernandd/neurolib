@@ -21,7 +21,6 @@ from neurolib.encoder.deterministic import DeterministicNNNode  # @UnusedImport
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-
 class CustomNode(InnerNode):
   """
   A custom InnerNode that can be built using a builder attribute 
@@ -44,7 +43,8 @@ class CustomNode(InnerNode):
                num_inputs,
                num_outputs,
                is_sequence=False,
-               name=None):
+               name=None,
+               name_prefix='Cust'):
     """
     Initialize a CustomNode
     
@@ -63,19 +63,21 @@ class CustomNode(InnerNode):
         
         name (str) :
     """
+    name_prefix = name_prefix or 'Cust'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
     super(CustomNode, self).__init__(out_builder,
-                                     is_sequence)
+                                     is_sequence,
+                                     name_prefix=name_prefix)
     
     self.num_expected_inputs = num_inputs
     self.num_expected_outputs = num_outputs
 
     self.in_builder = in_builder
     self.nodes = in_builder.nodes
-    self.name = 'Cust_' + str(self.label) if name is None else name
 
     self._innernode_to_its_avlble_islots = {}
     self._innernode_to_its_avlble_oslots = {}
-#     self._islot_to_inner_node_islot = bidict()
     self._islot_to_inner_node_islot = defaultdict(list)
     self._oslot_to_inner_node_oslot = bidict()
     
@@ -93,7 +95,6 @@ class CustomNode(InnerNode):
       raise ValueError("Missing argument")
     node = self.in_builder.nodes[innernode_name]
     self.in_builder.input_nodes[innernode_name] = node 
-#     self._islot_to_inner_node_islot[islot] = (innernode_name, inode_islot) 
     self._islot_to_inner_node_islot[islot].append((innernode_name, inode_islot)) 
   
   def declareOslot(self, oslot=None, innernode_name=None, inode_oslot=None):
@@ -199,7 +200,7 @@ class CustomNode(InnerNode):
                       "self._islot_to_inner_node_islot.values():".format(innernode_name,
                                                                          inode_islot))
         
-#     Stage B
+#   Stage B
     for innernode_name, oslot_list in self._innernode_to_its_avlble_oslots.items():
       if oslot_list:
         for inode_oslot in oslot_list:

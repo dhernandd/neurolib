@@ -22,7 +22,7 @@ from neurolib.models.flds import fLDS
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 2
-range_from = 1
+range_from = 0
 range_to = 2
 tests_to_run = list(range(range_from, range_to))
 

@@ -77,25 +77,12 @@ class Restore():
     """
     Split the dataset dictionary into train, validation and test datasets.
     """
-#     scope = self.main_scope
-#     train_dataset = {}
-#     valid_dataset = {}
-#     test_dataset = {}
     dset = {}
     for key in dataset:
       key_split = key.split('_')
       if key_split[0] == chunk:
         inode = "_".join(key_split[1:])
-#       if d_set == 'train':
         dset[self.scope + '/' + inode + ':0'] = dataset[key]
-#       elif d_set == 'valid':
-#         valid_dataset[scope + '/' + inode + ':0'] = dataset[key]
-#       elif d_set == 'test':
-#         test_dataset[scope + '/' + inode + ':0'] = dataset[key]
-#       else:
-#         raise KeyError("The dataset contains the key `{}`. The only allowed "
-#                        "prefixes for keys in the dataset are 'train', "
-#                        "'valid' and 'test'".format(key))
     
     return dset
     

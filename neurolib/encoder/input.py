@@ -25,9 +25,9 @@ class InputNode(ANode):
   """
   An abstract ANode representing inputs to the Model Graph (MG).
   
-  An InputNode represents a source of information. InputNodes are used to
-  represent user-provided data to be fed to the MG by means of a tensorflow
-  Placeholder. InputNodes may represent as well random inputs to the MG.
+  An InputNode represents a source of information. InputNodes are typically
+  stand for user-provided data, that is fed to the MG by means of a tensorflow
+  Placeholder. InputNodes may also represent random inputs to the MG.
   
   InputNodes have no incoming links. Information is "created" at the InputNode.
   Directed links into the InputNode and assignment to self.num_inputs are
@@ -48,6 +48,7 @@ class InputNode(ANode):
                builder,
                state_sizes,
                is_sequence=False,
+               name_prefix=None,
                **dirs):
     """
     Initialize the InputNode
@@ -62,16 +63,11 @@ class InputNode(ANode):
       
       is_sequence (bool): Is the input a sequence?
     """
-    super(InputNode, self).__init__()
-
-    self.builder = builder
-    self.label = builder.num_nodes
-    builder.num_nodes += 1
-  
-    self.is_sequence = is_sequence
     self.state_sizes = self.state_sizes_to_list(state_sizes)
-    self.batch_size = builder.batch_size
-    self.max_steps = builder.max_steps if hasattr(builder, 'max_steps') else None
+    super(InputNode, self).__init__(builder,
+                                    is_sequence,
+                                    name_prefix=name_prefix,
+                                    **dirs)
 
     # Slot names
     self.oslot_to_name[0] = 'main_' + str(self.label) + '_0'
@@ -84,6 +80,14 @@ class InputNode(ANode):
     # InputNode directives
     self.dtype = self.dtype_dict[dirs.pop('dtype')]
       
+  def _update_directives(self, **dirs):
+    """
+    Update this node directives
+    """
+    print("self", self)
+    self.directives = {'output_0_name' : 'main',}
+    self.directives.update(dirs)
+    
   @abstractmethod
   def _build(self):
     """
@@ -111,8 +115,9 @@ class PlaceholderInputNode(InputNode):
                builder,
                state_sizes,
                is_sequence=False,
-               name=None,
                dtype='float64',
+               name=None,
+               name_prefix='PhIn',
                **dirs):
     """
     Initialize the PlaceholderInputNode
@@ -132,23 +137,25 @@ class PlaceholderInputNode(InputNode):
       dirs (dict): A set of user specified directives for constructing this
           node.
     """
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     super(PlaceholderInputNode, self).__init__(builder,
                                                state_sizes,
                                                is_sequence=is_sequence,
                                                dtype=dtype,
+                                               name_prefix=name_prefix,
                                                **dirs)
-
-    self.name = name or "In_" + str(self.label)
 
     self.free_oslots = list(range(self.num_expected_outputs))
 
-    self._update_default_directives(**dirs)
+    self._update_directives(**dirs)
 
-  def _update_default_directives(self, **dirs):
+  def _update_directives(self, **dirs):
     """
     Update default directives
     """
-    self.directives = {'dtype' : 'float64'}
+    super(PlaceholderInputNode, self)._update_directives()
+    
+    self.directives.update({'dtype' : 'float64'})
     self.directives.update(dirs)
     
   def _build(self):
@@ -157,8 +164,6 @@ class PlaceholderInputNode(InputNode):
     
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
-#     dirs = self.directives
-    
     name = self.name
     out_shape = self.main_oshapes
     for oslot, out_shape in enumerate(self.main_oshapes):
@@ -197,6 +202,7 @@ class NormalInputNode(InputNode):
                state_sizes,
                is_sequence=False,
                name=None,
+               name_prefix='NormalIn',
                **dirs):
     """
     Initialize the NormalInputNode
@@ -216,21 +222,18 @@ class NormalInputNode(InputNode):
       dirs (dict): A set of user specified directives for constructing this
           node.
     """
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     super(NormalInputNode, self).__init__(builder,
                                           state_sizes,
                                           is_sequence=is_sequence,
                                           dtype='float64',
+                                          name_prefix=name_prefix,
                                           **dirs)
-    self.name = "Normal_" + str(self.label) if name is None else name
     self.dist = None
     self.xdim = self.state_sizes[0][0]
     
     if self.batch_size is None:
       self.dummy_bsz = tf.placeholder(tf.int32, [None], self.name + '_dummy_bsz')
-#       dz = tf.expand_dims(self.dummy_bsz, axis=1)
-#       dz = tf.tile(tf.zeros([self.xdim], tf.float64), self.dummy_bsz)
-#       dz = tf.reshape(dz, [-1, self.xdim])
-      #       self.dummy_zeros = tf.matmul(dz, )
       self.builder.dummies[self.dummy_bsz.name] = [None]
 
     self.free_oslots = list(range(self.num_expected_outputs))
@@ -239,54 +242,21 @@ class NormalInputNode(InputNode):
     self.oslot_to_name[1] = 'loc_'  + str(self.label) + '_1'
     self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
 
-    print("self.D", self.D)
-    self._update_default_directives(**dirs)
+    self._update_directives(**dirs)
     
     self._declare_secondary_outputs()
 
-  def _update_default_directives(self, **dirs):
+  def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    if self.D[0] == 1:
-#       oshape = self.main_oshapes[0]
-      oshape = self.main_oshapes[0][-1:]
-#       sc_oshape = oshape + oshape[-1:]
-    else:
-      raise NotImplementedError("main output with rank > 1 is not implemented "
-                                "for the Normal Input Node. ")
+    print("NormalInputNode, _update_directives")
+    this_node_dirs = {'output_1_name' : 'loc',
+                      'output_2_name' : 'scale'}
+    this_node_dirs.update(dirs)
     
-    # Define dummy Placeholders (always in root scope)
-    if self.batch_size is None:
-#       dummy_loc = tf.placeholder(self.dtype, oshape, self.name + '_dummy_loc')
-#       dummy_sc = tf.placeholder(self.dtype, sc_oshape, self.name + '_dummy_sc')
-#       self.builder.dummies[dummy_loc.name] = oshape
-#       self.builder.dummies[dummy_sc.name] = sc_oshape
-      print("oshape", oshape)
-#       dummy = tf.expand_dims(tf.cast(self.dummy_bsz, self.dtype), axis=1)
-#       li = tf.zeros([1]+oshape, dtype=self.dtype)
-#       dz = tf.reshape(dz, [-1, self.xdim])
-      dz = tf.tile(tf.zeros([self.xdim], tf.float64), self.dummy_bsz)
-#       self.loc_init = tf.reshape(dz, [-1, self.xdim])
-#       print("self.loc_init", self.loc_init)
-#       self.loc_init = tf.zeros(oshape, dtype=self.dtype)
-
-#       self.sc_init = (tf.zeros_like(dummy_sc, dtype=self.dtype) 
-#                       + tf.eye(oshape[-1], dtype=tf.float64))
-#       si = tf.expand_dims(tf.eye(oshape[0], dtype=self.dtype), axis=0)
-      sz = tf.reshape(tf.eye(self.xdim, dtype=tf.float64), [-1])
-      sz = tf.tile(sz, self.dummy_bsz)
-#       self.sc_init = tf.tensordot(dummy, si, axes=[1, 0])
-#       self.sc_init = tf.reshape(sz, [-1, self.xdim, self.xdim])
-#       print("self.sc_init", self.sc_init)
-#       self.sc_init = tf.eye(oshape[0], dtype=self.dtype)
-    else:
-      dummy = tf.zeros(oshape, self.dtype)
-
-    self.directives = {'output_0_name' : 'main',
-                       'output_1_name' : 'loc',
-                       'output_2_name' : 'scale'}
-    self.directives.update(dirs)
+    super(NormalInputNode, self)._update_directives(**this_node_dirs)
+    print("self.directives", self.directives)
         
   def _declare_secondary_outputs(self):
     """
@@ -307,7 +277,6 @@ class NormalInputNode(InputNode):
     """
     Get a sample from the distribution.
     """
-#     sample = self.dist.sample(sample_shape=self.dummy_bsz)
     sample = self.dist.sample(sample_shape=self.dummy_bsz)
     sample.set_shape([None, self.xdim])
     return sample

@@ -33,15 +33,12 @@ class DeepKalmanFilter(Model):
   def __init__(self,
                input_dims=None,
                state_dims=None,
-#                output_dims=None,
-#                num_inputs=1,
                builder=None,
                batch_size=1,
                max_steps=25,
                rnn_cell_class='basic',
                rnn_mode='fwd',
                seq_class=NonlinearDynamicswGaussianNoise,
-#                cell_class='basic',
                is_categorical=False,
                num_labels=None,
                root_rslts_dir=None,
@@ -105,7 +102,6 @@ class DeepKalmanFilter(Model):
       # Deal with dimensions
       self.input_dims = input_dims
       self.state_dims = state_dims
-#       self.output_dims = output_dims
       self._dims_to_list()
       self.main_input_dim = self.input_dims[:1]
 
@@ -192,6 +188,7 @@ class DeepKalmanFilter(Model):
                                           name='RNN',
                                           **dirs)
       evs2 = builder.addEvolutionSequence(state_sizes=self.ds_dims,
+                                          num_inputs=2,
                                           ev_seq_class=NonlinearDynamicswGaussianNoise,
                                           name='Recognition',
                                           **dirs)
@@ -289,3 +286,5 @@ class DeepKalmanFilter(Model):
     """
     """
     return Model.sample(self, input_data, node, islot=islot)
+  
+  

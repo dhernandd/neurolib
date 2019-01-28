@@ -101,11 +101,15 @@ class SequentialBuilder(StaticBuilder):
     return node_name
   
   @check_name
-  def addOutputSequence(self, name=None):
+  def addOutputSequence(self,
+                        name=None,
+                        name_prefix=None):
     """
     Add an OutputSequence
     """
-    return self.addOutput(name=name)
+    return self.addOutput(name=name,
+                          is_sequence=True,
+                          name_prefix=name_prefix)
   
   @check_name
   def addInnerSequence(self, 
@@ -127,6 +131,11 @@ class SequentialBuilder(StaticBuilder):
   def addEvolutionSequence(self,
                            state_sizes,
                            ev_seq_class='rnn',
+                           cell_class=None,
+                           num_inputs=1,
+                           name=None,
+                           name_prefix=None,
+                           mode='forward',
                            **dirs):
     """
     Add an EvolutionSequence
@@ -134,8 +143,14 @@ class SequentialBuilder(StaticBuilder):
     ev_seq_class = ev_seq_class
     if isinstance(ev_seq_class, str):
       ev_seq_class = self.ev_seq_dict[ev_seq_class]
+    print('cell_class', cell_class)
     node = ev_seq_class(self,
                         state_sizes,
+                        cell_class=cell_class,
+                        num_inputs=num_inputs,
+                        name=name,
+                        name_prefix=name_prefix,
+                        mode=mode,
                         **dirs)
     name = node.name
     self.nodes[name] = node

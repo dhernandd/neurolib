@@ -20,12 +20,22 @@ from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.normal import NormalTriLNode, LDSNode
 from tensorflow.python.framework.tensor_shape import TensorShape  #pylint: disable=no-name-in-module
 
-
 # pylint: disable=bad-indentation, no-member, protected-access
 
 class CustomCell(tf.nn.rnn_cell.RNNCell):
   """
-  A class for custom cells to be used with sequential models
+  An abstract class for custom cells to be used with sequential models.
+  
+  A CustomCell is defined in the neurolib as any node that takes its own output
+  as an input. Subclasses of CustomCell are expected to define the methods
+  
+  _update_directives
+  declare_cell_encoder
+  _get_init_states
+  __call__
+  
+  and the property
+  output_size
   """
   def __init__(self,
                builder,
@@ -111,7 +121,7 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
   def state_size(self):
     """
     """
-    raise NotImplementedError
+    return self.state_dims
 
   @property
   def output_size(self):
@@ -159,8 +169,8 @@ class TwoEncodersCell(CustomCell):
   A CustomCell with 2 inner states, each evolved by means of a deterministic RNN.
   """
   def __init__(self,
-               state_sizes,
                builder,
+               state_sizes,
                num_inputs=3,
                num_outputs=2,
                name=None,
@@ -192,7 +202,8 @@ class TwoEncodersCell(CustomCell):
     """
     Update the node directives
     """
-    self.directives = {}
+    self.directives = {'output_0_name' : 'main0',
+                       'output_1_name' : 'main1'}
     self.directives.update(dirs)
     
   def declare_cell_encoder(self):
@@ -231,12 +242,6 @@ class TwoEncodersCell(CustomCell):
     return [init1, init2]
     
   @property
-  def state_size(self):
-    """
-    """
-    return self.state_dims
-  
-  @property
   def output_size(self):
     """
     """
@@ -248,8 +253,8 @@ class TwoEncodersCell2(CustomCell):
   A CustomCell with 2 inner states, each evolved by means of a deterministic RNN.
   """
   def __init__(self,
-               state_sizes,
                builder,
+               state_sizes,
                num_inputs=3,
                num_outputs=2,
                name=None,
@@ -283,14 +288,7 @@ class TwoEncodersCell2(CustomCell):
     """
     self.directives = {}
     self.directives.update(dirs)
-    
-  @property
-  def state_size(self):
-    """
-    The size of the inner state
-    """
-    return self.state_dims
-  
+      
   @property
   def output_size(self):
     """
@@ -344,8 +342,8 @@ class NormalTriLCell(CustomCell):
   A CustomCell with 1 inner state, evolved by means of a stochastic normal RNN. 
   """
   def __init__(self,
-               state_sizes,
                builder,
+               state_sizes,
                num_inputs=2,
                name=None,
                **dirs):
@@ -363,9 +361,9 @@ class NormalTriLCell(CustomCell):
     """
     Update the node directives
     """
-    self.directives = {'out_0_name' : 'main0',
-                       'out_1_name' : 'mean',
-                       'out_2_name' : 'scale'}
+    self.directives = {'output_0_name' : 'main',
+                       'output_1_name' : 'mean',
+                       'output_2_name' : 'scale'}
     
     self.directives.update(dirs)
     
@@ -401,14 +399,7 @@ class NormalTriLCell(CustomCell):
     return [self.ext_builder.addInput(self.state_dims,
                                       iclass=NormalInputNode,
                                       **self.directives)]
-    
-  @property
-  def state_size(self):
-    """
-    Get self.state_size
-    """
-    return self.state_dims
-  
+      
   @property
   def output_size(self):
     """
@@ -441,8 +432,8 @@ class LDSCell(CustomCell):
   Dynamical System (LDS).
   """
   def __init__(self,
-               state_sizes,
                builder,
+               state_sizes,
                num_inputs=1,
                name=None,
                **dirs):
@@ -460,10 +451,10 @@ class LDSCell(CustomCell):
     """
     Update the node directives
     """
-    self.directives = {'out_0_name' : 'main',
-                       'out_1_name' : 'loc',
-                       'out_2_name' : 'invQ',
-                       'out_3_name' : 'A'}
+    self.directives = {'output_0_name' : 'main',
+                       'output_1_name' : 'loc',
+                       'output_2_name' : 'invQ',
+                       'output_3_name' : 'A'}
     
     self.directives.update(dirs)
     
@@ -492,22 +483,23 @@ class LDSCell(CustomCell):
     
   def _get_init_states(self):
     """
-    Get the init states of the cell (which will become the init_states of the
+    Get the init states of the cell (which are also the init states of the
     EvolutionSequence)
     
     The init_states are returned as a list indexed by islot.
+    
+    The directives to the init states should are passed to the Evolution
+    Sequence with the prefix 'init_'. 
+    
+    TODO: Change this so that the prefix is 'initx_' where x is the islot or
+    think a better way
     """
+    init_dirs = {key[5:] : self.directives[key] for key in self.directives
+                 if key.startswith('init_')}
     return [self.ext_builder.addInput(self.state_dims,
                                       iclass=NormalInputNode,
-                                      **self.directives)]
-    
-  @property
-  def state_size(self):
-    """
-    Get self.state_size
-    """
-    return self.state_dims
-  
+                                      **init_dirs)]
+      
   @property
   def output_size(self):
     """

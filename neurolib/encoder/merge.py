@@ -112,112 +112,244 @@ def blk_chol_inv(A_Txdxd, B_Tm1xdxd, b_Txd, lower=True, transpose=False):
     return result_Txd 
   
 
-class MergeNormals(InnerNode):
+class MergeNode(InnerNode):
   """
-  
+  A MergeNode defines a new InnerNode from a list of InnerNodes
   """
   def __init__(self,
                builder,
                state_size,
-               node_list,
-               num_extra_mergers=0,
+               node_list=None,
+               node_dict=None,
+               parents_to_oslot_tuples=None,
+               name_prefix=None,
+               is_sequence=False,
+               **dirs):
+    """
+    Initialize the MergeNode
+    """
+    # Get state_size (TODO: can be derived from mergers)
+    self.state_sizes = self.state_sizes_to_list(state_size)
+    self.xdim = self.state_sizes[0][0]
+    
+    super(MergeNode, self).__init__(builder,
+                                    is_sequence,
+                                    name_prefix=name_prefix,
+                                    **dirs)
+    
+    pots = self._parents_to_otuples(node_list=node_list,
+                                    node_dict=node_dict,
+                                    parents_to_oslot_tuples=parents_to_oslot_tuples)
+    self.parents_to_oslot_merge_tuples = pots
+    self.num_mergers = sum([len(pots[key]) for key in pots])
+        
+  def _parents_to_otuples(self,
+                          node_list=None,
+                          node_dict=None,
+                          parents_to_oslot_tuples=None):
+    """
+    Define the `parent_to_oslot_merge_tuples` dict for the MergeNodes
+    """
+    raise NotImplementedError("")
+    
+  def _update_directives(self, **dirs):
+    """
+    Update directives
+    """
+    this_node_dirs = {}
+    this_node_dirs.update(dirs)
+    print("dirs", dirs)
+    super(MergeNode, self)._update_directives(**this_node_dirs)
+    print("self.directives", self.directives)
+
+  @staticmethod
+  def get_node_oslots_from_output_names(node, *outputs):
+    """
+    """
+    print("node, *outputs", node, *outputs)
+    print("node.directives", node.directives.items())
+    found_output = [False for _ in range(len(outputs))]
+    found_oslots = []
+    for i, output in enumerate(outputs):
+      for oslot in range(node.num_expected_outputs):
+        key = 'output_' + str(oslot) + '_name'
+        if node.directives[key] == output:
+          if found_output[i] == True:
+            raise Exception("The parent node {} has more than one oslot named "
+                            " {}. Use the `parent_to_oslot_tuples "
+                            "attribute argument to initialize the "
+                            "MergeNode".format(node.name, output))
+          found_oslots.append(oslot)
+          found_output[i] = True
+      if found_output[i] == False:
+        raise Exception("output {} not found in parent node"
+                        "".format(output))
+    return found_oslots
+
+
+class MergeNormals(MergeNode):
+  """
+  Merge two or more normal distributions.
+  """
+  def __init__(self,
+               builder,
+               state_size,
+               node_list=None,
+               node_dict=None,
+               parents_to_oslot_tuples=None,
                name=None,
+               name_prefix='MergeNormals',
                **dirs):
     """
     Initialize the MergeNormals Node
     """
-    super(MergeNormals, self).__init__(builder)
-    
-    self.name = "MergeNormals_" + str(self.label) if name is None else name
-    self.num_mergers = len(node_list)
-    self.node_list = node_list
-    self.state_size = state_size
-    self.main_dim = state_size[0][0]
-    self.num_extra_mergers = num_extra_mergers
-    
-    num_mergers = len(node_list) + num_extra_mergers
-    self.num_expected_inputs = 2*num_mergers
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    super(MergeNormals, self).__init__(builder,
+                                       state_size,
+                                       node_list=node_list,
+                                       node_dict=node_dict,
+                                       parents_to_oslot_tuples=parents_to_oslot_tuples,
+                                       name_prefix=name_prefix,
+                                       is_sequence=False,
+                                       **dirs)
+    # Declare num_expected_inputs, outputs, etc.
+    self.num_expected_inputs = 2*self.num_mergers
     self.num_expected_outputs = 3
     self.num_declared_mergers = 0
     self.free_islots = list(range(self.num_expected_inputs))
     self.free_oslots = list(range(self.num_expected_outputs))
-    
-    self.cov_means = {}
-        
+
     self.dist = None
-
-    # Slot names
-    self.oslot_to_name[1] = 'loc_' + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
-
-    self._update_directives(**dirs)
-    
+    self.cov_means = {}
     self._add_links_from_mergers()
     
-  def _add_links_from_mergers(self):
+  def _parents_to_otuples(self,
+                          node_list=None,
+                          node_dict=None,
+                          parents_to_oslot_tuples=None):
     """
+    Turn any possible kind of input for the MergeNode into a
+    parent_to_oslot_tuples 
+    
+    Only one out of parents_list, node_dict or parents_to_oslot_tuples can be
+    provided.
     """
-    islot = 0
-    for node in self.node_list:
-      for oslot, name in node.oslot_to_name.items():
-        if any([i in name.split('_') for i in ['loc', 'scale']]):
-          self.builder.addDirectedLink(node, self,
-                                       islot=islot,
-                                       oslot=oslot)
-          islot += 1
-          
-      self.num_declared_mergers += 1
+    if parents_to_oslot_tuples is not None:
+      if node_list is not None:
+        raise ValueError("The argument `parents_list` is not None, yet "
+                         "`parents_to_oslot_tuples` was provided") 
+      if node_dict is not None:
+        raise ValueError("The argument `node_dict` is not None, yet "
+                         "`parents_to_oslot_tuples` was provided") 
       
-  def __call__(self, inputs=None, islot_to_itensor=None):
-    """
-    """
-    InnerNode.__call__(self, inputs=inputs, islot_to_itensor=islot_to_itensor)
+      self.parents_list = [self.builder.nodes[node] for node in parents_to_oslot_tuples]
+      return parents_to_oslot_tuples
+    elif node_dict is not None or node_list is not None:
+      if node_dict is not None:
+        if node_list is not None:
+          raise ValueError("`parents_list` is not None, but "
+                           "`node_dict` was also provided") 
+        self.parents_list = [self.builder.nodes[node] for node in node_dict]
+      else:
+        self.parents_list = [self.builder.nodes[node] for node in node_list]
       
-  def update_when_linked_as_node2(self):
-    """
-    TODO: Add update to self.covs
-    """
-    pass
+      parents_to_oslot_tuples = {}
+      for node in self.parents_list:
+        if node.name not in parents_to_oslot_tuples:
+          parents_to_oslot_tuples[node.name] = []
+        try:
+          oslots = self.get_node_oslots_from_output_names(node, 'loc', 'scale')
+          parents_to_oslot_tuples[node.name].append(tuple(oslots))
+        except:
+          raise Exception("Could not define `parents_to_oslot_tuples`"
+                          "from `self.parents_list`")
       
+      return parents_to_oslot_tuples
+
+    else:
+      raise ValueError("All of `parents_list`, `node_dict` and "
+                       "`parents_to_oslot_tuples` are None. "
+                       "Exactly one of them must be provided")
+
   def _update_directives(self, **dirs):
     """
     Update the node directives
+    
+    Add the directives for specific of this class and propagate up the class
+    hierarchy
     """
-    self.directives.update({'output_1_name' : 'loc',
-                            'output_2_name' : 'scale'})
-    self.directives.update(dirs)
+    this_node_dirs = {'output_1_name' : 'loc',
+                      'output_2_name' : 'scale'}
+    this_node_dirs.update(dirs)
+    super(MergeNormals, self)._update_directives(**this_node_dirs)
+
+  def _add_links_from_mergers(self):
+    """
+    Create the edges from the parents to this MergeNode
+    """
+    cur_islot = 0
+    for node in self.parents_to_oslot_merge_tuples:
+      print("self.parents_to_oslot_merge_tuples", self.parents_to_oslot_merge_tuples)
+      for merge_tuple in self.parents_to_oslot_merge_tuples[node]:
+        loc_oslot, scale_oslot = merge_tuple[0], merge_tuple[1]
+        self.builder.addDirectedLink(node,
+                                     self,
+                                     islot=cur_islot,
+                                     oslot=loc_oslot)
+        cur_islot += 1
+        self.builder.addDirectedLink(node,
+                                     self,
+                                     islot=cur_islot,
+                                     oslot=scale_oslot)
+        cur_islot += 1
+        self.num_declared_mergers += 1
+
+  def __call__(self, inputs=None, islot_to_itensor=None):
+    """
+    Call the MergeNode
+    """
+    InnerNode.__call__(self, inputs=inputs, islot_to_itensor=islot_to_itensor)
+      
+  def update_when_linked_as_node1(self):
+    """
+    """
+    return
   
+  def update_when_linked_as_node2(self):
+    """
+    """
+    return
+        
   def _get_mean_covariance(self):
     """
     Get the total covariance from the input scales
     """
-    md = self.main_dim
-    for islot in range(self.num_expected_inputs):
-      name_split = self.islot_to_name[islot].split('_')
-      dist_id = '_'.join(name_split[1:-1])
-      if dist_id not in self.cov_means:
-        self.cov_means[dist_id] = [tf.zeros([1, md, md], dtype=tf.float64),
-                                  tf.zeros([1, md, 1], dtype=tf.float64)]
-      if 'scale' in name_split: 
-        sc = self.get_input(islot)
-        print("sc", sc)
+    xdim = self.xdim
+    for parent_name in self.parents_to_oslot_merge_tuples:
+      parent = self.builder.nodes[parent_name]
+      for merge_tuple in self.parents_to_oslot_merge_tuples[parent_name]:
+        dist_id = parent.name + str(merge_tuple[0])
+        if dist_id not in self.cov_means:
+          self.cov_means[dist_id] = [tf.zeros([1, xdim, xdim], dtype=tf.float64),
+                                     tf.zeros([1, xdim, 1], dtype=tf.float64)]
+        else:
+          raise KeyError("The key {} already appears in `self.cov_means"
+                         "".format(dist_id))
+        loc_oslot, sc_oslot = merge_tuple 
+        
+        loc = parent.get_output(loc_oslot)
+        loc = tf.expand_dims(loc, axis=2)
+        self.cov_means[dist_id][0] = loc
+        
+        sc = parent.get_output(sc_oslot)
         cov = tf.matmul(sc, sc, transpose_b=True)
-        self.cov_means[dist_id][0] = cov
-      if 'loc' in name_split:
-        mn = self.get_input(islot)
-#         print("mn", mn)
-        mn = tf.expand_dims(mn, axis=2)
-        self.cov_means[dist_id][1] = mn
+        self.cov_means[dist_id][1] = cov
     
     print("self.cov_means", self.cov_means)
-    print("list(zip(*self.cov_means.values()))[0]", list(zip(*self.cov_means.values()))[0])
-    total_cov = sum([cov for cov in list(zip(*self.cov_means.values()))[0]])
-    print("total_cov", total_cov)
-    post_mean = sum([tf.matmul(tf.matrix_inverse(cov_mean[0]), cov_mean[1]) 
+    total_cov = sum([cov for cov in list(zip(*self.cov_means.values()))[1]])
+    post_mean = sum([tf.matmul(tf.matrix_inverse(cov_mean[1]), cov_mean[0]) 
                      for cov_mean in self.cov_means.values()])
-    print("post_mean", post_mean)
     post_mean = tf.matmul(tf.matrix_inverse(total_cov), post_mean)
-    print("post_mean", post_mean)
     post_mean = tf.squeeze(post_mean, axis=2)
         
     return post_mean, total_cov
@@ -226,120 +358,199 @@ class MergeNormals(InnerNode):
     """
     Builds the merged Normal distribution
     """
-    mean, cov = self._get_mean_covariance()
-    self.dist = MultivariateNormalFullCovariance(loc=mean,
-                                                 covariance_matrix=cov)
-    samp = self.dist.sample(name='Out' + str(self.label) + '_0')
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+      mean, cov = self._get_mean_covariance()
+      self.dist = MultivariateNormalFullCovariance(loc=mean,
+                                                   covariance_matrix=cov)
     
     o0_name = self.directives['output_0_name']
+    samp = self.dist.sample(name='Out' + str(self.label) + '_0')
     self._oslot_to_otensor[0] = tf.identity(samp, name=o0_name)
+
     o1_name = self.directives['output_1_name']
     self._oslot_to_otensor[1] = tf.identity(mean, name=o1_name)
+
     o2_name = self.directives['output_2_name']
-#     print("self._oslot_to_otensor[1]", self._oslot_to_otensor[1])
     self._oslot_to_otensor[2] = tf.identity(self.dist.scale.to_dense(), name=o2_name)
     print("self._oslot_to_otensor[2]", self._oslot_to_otensor[2])
     
     self._is_built = True
 
 
-class MergeSeqsNormalLDSEv(InnerNode):
+class MergeSeqsNormalLDSEv(MergeNode):
   """
+  Merge a normal sequence with an LDS evolution sequence
   """
   def __init__(self,
                builder,
                state_size,
-               node_list,
-#                input_series,
-#                ev_seq,
+               node_list=None,
+               node_dict=None,
+               parents_to_oslot_tuples=None,
                name=None,
+               name_prefix='MergeSeqs',
                **dirs):
     """
+    Initialize the MergeSeqsNormalLDSEv 
     """
-    super(MergeSeqsNormalLDSEv, self).__init__(builder)
-    
-    self.state_size = state_size
-    self.input_series, self.ev_seq = node_list
-    self.prior = self.ev_seq.get_init_inodes()[0]
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    super(MergeSeqsNormalLDSEv, self).__init__(builder,
+                                               state_size,
+                                               node_list=node_list,
+                                               node_dict=node_dict,
+                                               parents_to_oslot_tuples=parents_to_oslot_tuples,
+                                               is_sequence=True,
+                                               name_prefix=name_prefix,
+                                               **dirs)
+    self._add_additional_inputs()
 
-    self.state_sizes = self.ev_seq.state_sizes
-    self.main_oshape = self.get_state_full_shapes()
-    self.D = self.get_state_size_ranks()
-    self._oslot_to_shape[0] = self.main_oshape
-          
-    self.name = "MergeSeqs_" + str(self.label) if name is None else name
-    self.main_dim = self.state_sizes[0][0]
-    
     self.num_expected_inputs = 5
     self.num_expected_outputs = 4
 
+    self.main_oshape = self.get_state_full_shapes()
+    self.D = self.get_state_size_ranks()
+    self._oslot_to_shape[0] = self.main_oshape
+    self.main_dim = self.state_sizes[0][0]
+          
     self.free_islots = list(range(self.num_expected_inputs))
     self.free_oslots = list(range(self.num_expected_outputs))
     
-    self.cov_means = {}
-        
     self.dist = None
 
-    # Slot names
-    self.oslot_to_name[1] = 'loc' + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'chol-diag' + str(self.label) + '_2'
-    self.oslot_to_name[3] = 'chol-offdiag' + str(self.label) + '_3'
-
-    self._update_directives(**dirs)
-    
-    self._add_secondary_links()
-    
     self._add_links_from_mergers()
+
+    self._add_secondary_links()    
+    
+  def _parents_to_otuples(self,
+                          node_list=None,
+                          node_dict=None,
+                          parents_to_oslot_tuples=None):
+    """
+    Turn any possible kind of input to the MergeNode into a
+    parent_to_oslot_tuples 
+    
+    Only one out of parents_list, node_dict or parents_to_oslot_tuples can be
+    provided.
+    """
+    if parents_to_oslot_tuples is not None:
+      if node_list is not None:
+        raise ValueError("The argument `node_list` is not None, yet "
+                         "`parents_to_oslot_tuples` was provided") 
+      if node_dict is not None:
+        raise ValueError("The argument `node_dict` is not None, yet "
+                         "`parents_to_oslot_tuples` was provided") 
+      
+      in_seq_name = parents_to_oslot_tuples['in_seq'][0]
+      ev_seq_name = parents_to_oslot_tuples['ev_seq'][0]
+      self.parents_list = [self.builder.nodes[in_seq_name],
+                           self.builder.nodes[ev_seq_name]]
+      return parents_to_oslot_tuples
+    elif node_dict is not None or node_list is not None:
+      if node_dict is not None:
+        if node_list is not None:
+          raise ValueError("`parents_list` is not None, but "
+                           "`node_dict` was also provided") 
+        in_seq_name = node_dict['in_seq']
+        ev_seq_name = node_dict['ev_seq']
+        self.parents_list = [self.builder.nodes[in_seq_name],
+                             self.builder.nodes[ev_seq_name]]
+      else:
+        self.parents_list = [self.builder.nodes[node] for node in node_list]
+      
+      parents_to_oslot_tuples = {}
+      in_seq, ev_seq = self.parents_list
+      try:
+        iseq_oslots = self.get_node_oslots_from_output_names(in_seq, 'loc', 'precision')
+        eseq_oslots = self.get_node_oslots_from_output_names(ev_seq, 'invQ', 'A')
+        
+        iseq_oslots.insert(0, in_seq.name)
+        eseq_oslots.insert(0, ev_seq.name)
+        
+#         parents_to_oslot_tuples['in_seq'].append(tuple(iseq_oslots))
+#         parents_to_oslot_tuples['ev_seq'].append(tuple(eseq_oslots))
+        parents_to_oslot_tuples['in_seq'] = tuple(iseq_oslots)
+        parents_to_oslot_tuples['ev_seq'] = tuple(eseq_oslots)
+      except:
+        raise Exception("Could not define `parents_to_oslot_tuples`"
+                        "from `self.parents_list`")
+      
+      return parents_to_oslot_tuples
+
+    else:
+      raise ValueError("All of `parents_list`, `node_dict` and "
+                       "`parents_to_oslot_tuples` are None. "
+                       "Exactly one of them must be provided")
 
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    self.directives = {'output_loc_name' : self.name + '_' + str(1) + '_loc',
-                      'output_scale_name' : self.name + '_' + str(2) + '_scale'}
-    self.directives.update(dirs)
+    this_node_dirs = {'output_1_name' : 'loc',
+                      'output_2_name' : 'scale'}
+    this_node_dirs.update(dirs)
+    super(MergeSeqsNormalLDSEv, self)._update_directives(**this_node_dirs)
     
+  def _add_additional_inputs(self):
+    """
+    """
+    ev_seq = self.parents_list[1]
+    prior = ev_seq.get_init_inodes()[0]
+#     self.parents_to_oslot_merge_tuples['ev_seq_prior'] = []
+    try:
+      print("prior", prior.name, prior)
+      prior_oslot = self.get_node_oslots_from_output_names(prior, 'scale')
+      print("prior_oslot", prior_oslot)
+      prior_oslot.insert(0, prior.name)
+#       self.parents_to_oslot_merge_tuples['ev_seq_prior'].append(tuple(prior_oslot))
+      self.parents_to_oslot_merge_tuples['ev_seq_prior'] = tuple(prior_oslot)
+    except:
+      raise KeyError("Could not define the entry `eq_seq_prior` in "
+                       "`self.parents_to_oslot_merge_tuples`")
+
   def _add_secondary_links(self):
     """
     """
     # Loc oslot
     self._oslot_to_shape[1] = self.main_oshape
-    o1 = self.builder.addOutput(name=self.directives['output_loc_name'])
+    o1 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_1_name'])
     self.builder.addDirectedLink(self, o1, oslot=1)
     
   def _add_links_from_mergers(self):
     """
+    Create the edges from the parents to this MergeNode
     """
+    prnts_to_otpls = self.parents_to_oslot_merge_tuples
     islot = 0
     self.islot_collections = defaultdict(list)
-#     for node in self.node_list:
-    for oslot, name in self.input_series.oslot_to_name.items():
-      print("merge; oslot, name", oslot, name)
-      if any([i in name.split('_') for i in ['loc', 'precision']]):
-        self.builder.addDirectedLink(self.input_series,
-                                     self,
-                                     islot=islot,
-                                     oslot=oslot)
-        self.islot_collections[self.input_series.name].append(islot)
-        islot += 1
-    for oslot, name in self.ev_seq.oslot_to_name.items():
-      print("merge; oslot, name", oslot, name)
-      if any([i in name.split('_') for i in ['A', 'invQ']]):
-        self.builder.addDirectedLink(self.ev_seq,
-                                     self,
-                                     islot=islot,
-                                     oslot=oslot)
-        self.islot_collections[self.ev_seq.name].append(islot)
-        islot += 1
-    for oslot, name in self.prior.oslot_to_name.items():
-      print("merge; oslot, name", oslot, name)
-      if any([i in name.split('_') for i in ['scale']]):
-        self.builder.addDirectedLink(self.prior,
-                                     self,
-                                     islot=islot,
-                                     oslot=oslot)
-        self.islot_collections[self.prior.name].append(islot)
-#         islot += 1
+
+    # Declare the edges from the input sequence
+    iseq_name, loc_oslot, prec_oslot = prnts_to_otpls['in_seq']
+    for oslot in [loc_oslot, prec_oslot]:
+      self.builder.addDirectedLink(iseq_name,
+                                   self,
+                                   islot=islot,
+                                   oslot=oslot)
+      self.islot_collections['in_seq'].append(islot)
+      islot += 1
+
+    # Declare the edges from the evolution sequence
+    eseq_name, invQ_oslot, A_oslot = prnts_to_otpls['ev_seq']
+    for oslot in [invQ_oslot, A_oslot]:
+#       print("merge; oslot, name", oslot, name)
+      self.builder.addDirectedLink(eseq_name,
+                                   self,
+                                   islot=islot,
+                                   oslot=oslot)
+      self.islot_collections['ev_seq'].append(islot)
+      islot += 1
+  
+    # Declare the edge from the evolution sequence prior
+    prior_name, sc_oslot = prnts_to_otpls['ev_seq_prior']
+    self.builder.addDirectedLink(prior_name,
+                                 self,
+                                 islot=islot,
+                                 oslot=sc_oslot)
+    self.islot_collections['ev_seq_prior'].append(islot)
     
   def _get_loc_inv_scale(self):
       """
@@ -366,15 +577,37 @@ class MergeSeqsNormalLDSEv(InnerNode):
           - checks: A list containing the tensors that form the full precision
               matrix
       """
-      input_series_name = self.input_series.name
-      for islot in self.islot_collections[input_series_name]:
-        if 'precision' in self.islot_to_name[islot].split('_'):
-          lmbda_NxTxdxd = self.get_input(islot)
-        elif 'loc' in self.islot_to_name[islot].split('_'):
-          mu_NxTxd = self.get_input(islot)
-          mu_NxTxdx1 = tf.expand_dims(mu_NxTxd, axis=-1)
+      # Get islots of the input sequence
+      in_seq_islots = self.islot_collections['in_seq']
+      mu_NxTxd = self.get_input(in_seq_islots[0])
+      mu_NxTxdx1 = tf.expand_dims(mu_NxTxd, axis=-1)
+      lmbda_NxTxdxd = self.get_input(in_seq_islots[1])
       lmbdaMu_NxTxd = tf.squeeze(tf.matmul(lmbda_NxTxdxd, mu_NxTxdx1), axis=-1)
-      print('\n GOOD \n')
+      
+      Nsamps = tf.shape(mu_NxTxd)[0]
+      NTbins = self.max_steps
+      xDim = self.main_dim
+
+      # Get islots of the evolution sequence
+      ev_seq_islots = self.islot_collections['ev_seq']
+      invQ_NxTxdxd = self.get_input(ev_seq_islots[0])
+      A_NxTxdxd = self.get_input(ev_seq_islots[1])
+
+      # Get islots of the evolution sequence prior
+      ev_seqp_islots = self.islot_collections['ev_seq_prior']
+      Q0scale_Nxdxd = self.get_input(ev_seqp_islots[0])
+      Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
+      invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
+      invQ0_Nx1xdxd = tf.expand_dims(invQ0_Nxdxd, axis=1)
+
+#       for islot in self.islot_collections[input_series_name]:
+#         if 'precision' in self.islot_to_name[islot].split('_'):
+#           lmbda_NxTxdxd = self.get_input(islot)
+#         elif 'loc' in self.islot_to_name[islot].split('_'):
+#           mu_NxTxd = self.get_input(islot)
+#           mu_NxTxdx1 = tf.expand_dims(mu_NxTxd, axis=-1)
+#       lmbdaMu_NxTxd = tf.squeeze(tf.matmul(lmbda_NxTxdxd, mu_NxTxdx1), axis=-1)
+#       print('\n GOOD \n')
 #       if InputY: _, Lambda_NxTxdxd, self.LambdaMu_NxTxd = self.get_Mu_Lambda(InputY)
 #       else: Lambda_NxTxdxd = self.Lambda_NxTxdxd
       
@@ -383,24 +616,23 @@ class MergeSeqsNormalLDSEv(InnerNode):
 #       X_NxTxd = self.X if InputX is None else InputX
 #       if Ids is None: Ids = self.Ids
       
-      Nsamps = tf.shape(mu_NxTxd)[0]
-      NTbins = self.max_steps
-#       NTbins = tf.shape(_NxTxd)[1]
-      xDim = self.main_dim
+#       Nsamps = tf.shape(mu_NxTxd)[0]
+#       NTbins = self.max_steps
+#       xDim = self.main_dim
       
       # Simone Biles level tensorflow gymnastics in the next 150 lines or so
-      ev_seq_name = self.ev_seq.name
-      for islot in self.islot_collections[ev_seq_name]:
-        if 'A' in self.islot_to_name[islot].split('_'):
-          A_NxTxdxd = self.get_input(islot)
-        if 'invQ' in self.islot_to_name[islot].split('_'):
-          invQ_NxTxdxd = self.get_input(islot)
-      for islot in self.islot_collections[self.prior.name]:
-        if 'scale' in self.islot_to_name[islot].split('_'):
-          Q0scale_Nxdxd = self.get_input(islot)
-          Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
-          invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
-          invQ0_Nx1xdxd = tf.expand_dims(invQ0_Nxdxd, axis=1)
+#       ev_seq_name = self.ev_seq.name
+#       for islot in self.islot_collections[ev_seq_name]:
+#         if 'A' in self.islot_to_name[islot].split('_'):
+#           A_NxTxdxd = self.get_input(islot)
+#         if 'invQ' in self.islot_to_name[islot].split('_'):
+#           invQ_NxTxdxd = self.get_input(islot)
+#       for islot in self.islot_collections[self.prior.name]:
+#         if 'scale' in self.islot_to_name[islot].split('_'):
+#           Q0scale_Nxdxd = self.get_input(islot)
+#           Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
+#           invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
+#           invQ0_Nx1xdxd = tf.expand_dims(invQ0_Nxdxd, axis=1)
       print("normal; A_NxTxdxd", A_NxTxdxd)
       print("normal; invQ_NxTxdxd", invQ_NxTxdxd)
       print("normal; invQ0_Nx1xdxd", invQ0_Nx1xdxd)

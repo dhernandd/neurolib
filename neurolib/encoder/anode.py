@@ -17,17 +17,17 @@ import abc
 from collections import defaultdict
 from bidict import bidict
 
-# pylint: disable=bad-indentation, no-member, protected-access
+# pylint: disable=bad-indentation, protected-access, no-member
 
 class ANode(abc.ABC):
   """
   Abstract class for Nodes, the basic building block of the neurolib 
   
-  An ANode is an abstraction of an operation, much like a tensorflow op, with
-  tensors entering and exiting the node. Compared to tensorflow nodes, ANodes
-  are meant to represent higher level abstractions. Basically, they are mappings
-  that transform input information into some output encoding. In the flow of
-  information through a graphical statistical mode, ANodes represent relevant
+  An ANode is an abstraction of an operation, much like a tensorflow Op. Tensors
+  enter and exit the node. However, compared to tensorflow nodes, ANodes are
+  meant to represent higher level abstractions. Basically, they are mappings
+  that encode some input data into their output. In the flow of information
+  through a graphical statistical mode, ANodes represent the most relevant
   stops.
   
   Ex: The Variational Autoencoder Model graph is a sequence of ANodes given by: 
@@ -41,9 +41,8 @@ class ANode(abc.ABC):
   ANode that represent respectively the Model's sources and sinks of
   information.
   
-  Most subclasses of ANode are not meant to be accessed (built and linked)
-  directly, but rather through a Builder object. The latter in turn is usually a
-  property of a Model. 
+  Subclasses of ANode are not meant to be accessed (built and linked) directly,
+  but rather through a Builder object.
     
   Upon initialization, an ANode holds specifications of its role in the full
   tensorflow graph of a Model to which the ANode belongs. The ANode tensorflow
@@ -61,7 +60,11 @@ class ANode(abc.ABC):
     self._parent_label_to_islot : The keys are the labels of self's parents, the only
         value is an integer, the islot in self that maps to that child. 
   """
-  def __init__(self):
+  def __init__(self,
+               builder,
+               is_sequence,
+               name_prefix=None,
+               **dirs):
     """
     Initialize an ANode
         
@@ -82,11 +85,36 @@ class ANode(abc.ABC):
     
     self._built_parents = {}
     self._child_label_to_slot_pairs = defaultdict(list)
-#     self._parent_label_to_islot = bidict({})
     self._parent_label_to_islot = defaultdict(list)
     
     self._is_built = False
+
+    # Set the node label and name
+    self.builder = builder
+    self.label = builder.num_nodes
+    builder.num_nodes += 1
+    if not hasattr(self, 'name'):
+      self.name = name_prefix + '_' + str(self.label)
+    
+    # Set the batch size, max_steps
+    self.batch_size = builder.batch_size
+    self.is_sequence = is_sequence
+    self.max_steps = builder.max_steps if is_sequence else None
+    
+    # Update directives
+    self._update_directives(**dirs)
   
+  def _set_name_or_get_name_prefix(self, name=None, name_prefix=None):
+    """
+    """
+    if name is not None:
+      self.name = name
+      name_prefix = None
+    else:
+      assert name_prefix is not None, "Cannot set `name` attribute"
+    
+    return name_prefix
+
   @property
   def num_declared_inputs(self):
     """
@@ -128,6 +156,15 @@ class ANode(abc.ABC):
                        "not be greater than {}".format(self.__class__.__name__,
                                                            self.num_expected_outputs))
     self._num_declared_outputs = value
+  
+  def _update_directives(self, **dirs):
+    """
+    Update the node directive
+    
+    Here, every ANode dictionary of directives is defined.
+    """
+    self.directives = {}
+    self.directives.update(dirs)
   
   @staticmethod
   def state_sizes_to_list(state_sizes):
@@ -192,21 +229,20 @@ class ANode(abc.ABC):
     
     Requires the node to be built.
     """
-#     if not self._is_built:
-#       raise NotImplementedError("A Node must be built before its outputs "
-#                                 "can be accessed")
     return self._oslot_to_otensor[oslot]
   
   def update_when_linked_as_node1(self):
     """
+    Execute after linking as parent node
     """
-    pass
+    return
   
   def update_when_linked_as_node2(self):
     """
+    Execute after linking as child node
     """
-    pass
-  
+    return
+    
   def __call__(self, inputs, state):
     """
     """

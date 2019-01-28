@@ -59,10 +59,10 @@ class DKFTestTrain(tf.test.TestCase):
     dkf = DeepKalmanFilter(input_dims=[[input_dims]],
                            max_steps=max_steps,
                            batch_size=1,
-                           state_dims=[[40], [4]]) # logs and save implemented
-#                            keep_logs=True,
-#                            save_on_valid_improvement=True,
-#                            root_rslts_dir='./rslts/')
+                           state_dims=[[40], [4]], # logs and save implemented
+                           keep_logs=True,
+                           save_on_valid_improvement=True,
+                           root_rslts_dir='./rslts/')
     dkf.build()
     dkf.train(dataset, num_epochs=10)
     

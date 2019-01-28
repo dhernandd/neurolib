@@ -172,11 +172,11 @@ class fLDS(Model):
       ins1 = builder.addInnerSequence([[xdim]], num_inputs=1, node_class=NormalPrecisionNode)
       evs1 = builder.addEvolutionSequence([[xdim]],
                                           num_inputs=1,
-                                          num_outputs=1,
+#                                           num_outputs=1,
                                           cell_class=LDSCell)
       m1 = builder.addMergeNode([[xdim]],
-                                [ins1, evs1],
-                                MergeSeqsNormalLDSEv,
+                                node_list=[ins1, evs1],
+                                merge_class=MergeSeqsNormalLDSEv,
                                 name='Recognition')
       ins2 = builder.addInnerSequence([[ydim]],
                                       num_inputs=1,

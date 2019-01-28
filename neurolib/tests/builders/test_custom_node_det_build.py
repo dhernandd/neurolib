@@ -20,9 +20,11 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 3
+# NUM_TESTS : 3
+run_from = 0
+run_to = 3
 run_up_to_test = 3
-tests_to_run = list(range(run_up_to_test))
+tests_to_run = list(range(run_from, run_to))
 
 class CustomEncoderBuilderBasicTest(tf.test.TestCase):
   """

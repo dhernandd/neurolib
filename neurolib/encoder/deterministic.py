@@ -42,6 +42,7 @@ class DeterministicNNNode(InnerNode):
                num_inputs=1,
                is_sequence=False,
                name=None,
+               name_prefix=None,
                **dirs):
     """
     Initialize a DeterministicNNNode.
@@ -63,37 +64,36 @@ class DeterministicNNNode(InnerNode):
       dirs (dict): A set of user specified directives for constructing this
           node
     """
-    super(DeterministicNNNode, self).__init__(builder, is_sequence)
-    
-    self.name = "Det_" + str(self.label) if name is None else name
-    
+    name_prefix = name_prefix or 'Det'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     self.state_sizes = self.state_sizes_to_list(state_sizes)
-#     self.main_output_sizes = self.get_output_sizes(state_sizes)
+    
+    super(DeterministicNNNode, self).__init__(builder,
+                                              is_sequence,
+                                              name_prefix=name_prefix,
+                                              **dirs)
+    
     self.num_expected_inputs = num_inputs
     
     # Define main shape
     self.main_oshapes = self.get_state_full_shapes()
     self.state_ranks = self.get_state_size_ranks()
     self.xdim = self.state_sizes[0][0]
-
-#     self.main_oshapes, self.D = self.get_main_oshapes()
     self._oslot_to_shape[0] = self.main_oshapes
     
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
-    self._update_directives(**dirs)
-    
-    
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    self.directives = {'num_layers' : 2,
+    this_node_dirs = {'num_layers' : 2,
                        'num_nodes' : 128,
                        'activation' : 'relu',
                        'net_grow_rate' : 1.0}
-    self.directives.update(dirs)
+    this_node_dirs.update(dirs)
+    super(DeterministicNNNode, self)._update_directives(**this_node_dirs)
   
   def _get_output(self, inputs=None, islot_to_itensor=None):
     """
@@ -131,7 +131,6 @@ class DeterministicNNNode(InnerNode):
       raise err
     
     # Build
-#     self.xdim = self.main_output_sizes[0][0]
     if num_layers == 1:
       output = layers[0](_input, self.xdim, activation_fn=activations[0])
     else:
@@ -155,10 +154,9 @@ class DeterministicNNNode(InnerNode):
     """
     Build the DeterministicNNNode
     """
-#     print("self._islot_to_itensor", self._islot_to_itensor)
     output = self._get_output(islot_to_itensor=self._islot_to_itensor)
     
-    output_name = self.name + '_out'
+    output_name = self.name + self.directives['output_0_name']
     self._oslot_to_otensor[0] = tf.identity(output, output_name) 
       
     self._is_built = True

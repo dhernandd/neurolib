@@ -19,15 +19,15 @@ import numpy as np
 import tensorflow as tf
 
 from neurolib.encoder.seq_cells import TwoEncodersCell, NormalTriLCell,\
-  TwoEncodersCell2
+  TwoEncodersCell2, LDSCell
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 4
+# NUM_TESTS : 5
 range_from = 0
-range_to = 4
+range_to = 5
 tests_to_run = list(range(range_from, range_to))
 test_to_run = 10
 
@@ -92,7 +92,6 @@ class CustomCellTrainTest(tf.test.TestCase):
     is1 = builder.addInputSequence([[1]])
     ev1 = builder.addEvolutionSequence([[2],[3]],
                                        num_inputs=3,
-                                       num_outputs=2,
                                        cell_class=TwoEncodersCell)
     os1 = builder.addOutputSequence()
     os2 = builder.addOutputSequence()
@@ -122,10 +121,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3],[3]],
                                        num_inputs=3,
-                                       num_outputs=2,
-                                       cell_class=TwoEncodersCell,
-                                       o0_name='prediction',
-                                       o1_name='response')
+                                       cell_class=TwoEncodersCell)
     os1 = builder.addOutputSequence(name='prediction')
     os2 = builder.addOutputSequence(name='response')
     builder.addDirectedLink(is1, ev1, islot=2)
@@ -159,9 +155,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3]],
                                        num_inputs=2,
-                                       num_outputs=3,
-                                       cell_class=NormalTriLCell,
-                                       o0_name='prediction')
+                                       cell_class=NormalTriLCell)
     inn1 = builder.addInnerSequence([[10]], 1)
     os1 = builder.addOutputSequence(name='prediction')
     builder.addDirectedLink(is1, ev1, islot=1)
@@ -202,7 +196,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     is1 = builder.addInputSequence([[1]], name='observation')
     ev1 = builder.addEvolutionSequence([[3],[3]],
                                        num_inputs=3,
-                                       num_outputs=2,
+#                                        num_outputs=2,
                                        cell_class=TwoEncodersCell2,
                                        o0_name='prediction',
                                        o1_name='response')
@@ -221,6 +215,28 @@ class CustomCellTrainTest(tf.test.TestCase):
     dataset = trainer.prepare_datasets(dataset)
     trainer.train(dataset, num_epochs=10)
     
+  @unittest.skipIf(4 not in tests_to_run, "Skipping")
+  def test_lds_cell_build(self):
+    """
+    """
+    scope = "Main"
+    max_steps = 25
+
+    builder = SequentialBuilder(max_steps=max_steps,
+                                scope=scope)
+    ev1 = builder.addEvolutionSequence([[3]],
+                                       num_inputs=1,
+                                       cell_class=LDSCell)
+    os1 = builder.addOutputSequence(name='prediction')
+    builder.addDirectedLink(ev1, os1)
+    builder.build()
+    
+    o = builder.get_node_output(ev1, oslot=3)
+    print(o[:,0])
+    o = builder.eval_output(ev1, oslot=3)
+    print(o[:,0])
+
     
 if __name__ == '__main__':
-  unittest.main(failfast=True) 
+  unittest.main(failfast=True)
+  

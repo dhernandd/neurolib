@@ -42,19 +42,24 @@ class NormalNode(InnerNode):
                builder,
                state_sizes,
                num_inputs,
-               is_sequence=False):
+               is_sequence=False,
+               name_prefix=None,
+               **dirs):
     """
     Initialize the Normal Node
     """
+    self.state_sizes = self.state_sizes_to_list(state_sizes)
+    
     super(NormalNode, self).__init__(builder,
-                                     is_sequence)
+                                     is_sequence,
+                                     name_prefix=name_prefix,
+                                     **dirs)
     
     self.num_expected_inputs = num_inputs
-    self.state_sizes = self.state_sizes_to_list(state_sizes)
+
     self.main_oshapes = self.get_state_full_shapes()
     self.state_ranks = self.get_state_size_ranks()
     self.xdim = self.state_sizes[0][0]
-
     self._oslot_to_shape[0] = self.main_oshapes[0]
     
   def _declare_secondary_outputs(self):
@@ -65,7 +70,7 @@ class NormalNode(InnerNode):
     main_oshape = self.state_sizes[0]
     add_name = lambda x : self.name + '_' + x
     
-    # Mean oslot
+    # Loc oslot
     self._oslot_to_shape[1] = main_oshape
     o1 = self.builder.addOutput(name=add_name(self.directives['output_1_name']))
     self.builder.addDirectedLink(self, o1, oslot=1)
@@ -79,7 +84,6 @@ class NormalNode(InnerNode):
     """
     Get the loglikelihood of the inputs `ipt` for this distribution
     """
-    print("normal; ipt", ipt)
     return self.dist.log_prob(ipt)
   
   def entropy(self):
@@ -92,7 +96,7 @@ class NormalNode(InnerNode):
   def _build(self):
     """
     """
-    InnerNode._build(self)
+    raise NotImplementedError("")
       
   def __call__(self, inputs=None):
     """
@@ -114,6 +118,8 @@ class LDSNode(NormalNode):
   """
   An InnerNode that outputs a sample from a normal distribution with input-
   dependent mean and variance.
+  
+  TODO: Efficient logprob and entropy
   """
   num_expected_outputs = 4
   
@@ -123,27 +129,24 @@ class LDSNode(NormalNode):
                num_inputs=1,
                is_sequence=False,
                name=None,
+               name_prefix=None,
                **dirs):
     """
     Initialize the LDSNode
     """
+    name_prefix = name_prefix or 'LDS'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
     super(LDSNode, self).__init__(builder,
                                   state_sizes=state_sizes,
                                   num_inputs=num_inputs,
-                                  is_sequence=is_sequence)
-        
-    self.name = "LDS_" + str(self.label) if name is None else name
+                                  is_sequence=is_sequence,
+                                  name_prefix=name_prefix,
+                                  **dirs)
     self.dist = None
 
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
-
-    # Slot names
-    self.oslot_to_name[1] = 'loc_' + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
-    self.oslot_to_name[3] = 'A_' + str(self.label) + '_3'
-
-    self._update_directives(**dirs)
     
     self._declare_secondary_outputs()
     
@@ -151,15 +154,16 @@ class LDSNode(NormalNode):
     """
     Update the node directives
     """
-    self.directives = {'num_layers' : 2,
-                       'num_nodes' : 128,
-                       'activation' : 'leaky_relu',
-                       'net_grow_rate' : 1.0,
-                       'share_params' : False,
-                       'output_loc_name' : self.name + '_' + str(1) + '_loc',
-                       'output_invQ_name' : self.name + '_' + str(2) + '_invQ',
-                       'output_A_name' : self.name + '_' + str(3) + '_A'}
-    self.directives.update(dirs)
+    this_node_dirs = {'num_layers' : 2,
+                      'num_nodes' : 128,
+                      'activation' : 'leaky_relu',
+                      'net_grow_rate' : 1.0,
+                      'share_params' : False,
+                      'output_1_name' : 'loc',
+                      'output_2_name' : 'invQ',
+                      'output_3_name' : 'A'}
+    this_node_dirs.update(dirs)
+    super(LDSNode, self)._update_directives(**this_node_dirs)
     
     # Deal with directives that map to tensorflow objects hidden from the client
     self.directives['activation'] = act_fn_dict[self.directives['activation']]
@@ -171,17 +175,17 @@ class LDSNode(NormalNode):
     """
     # Loc oslot
     self._oslot_to_shape[1] = self.state_sizes[0]
-    o1 = self.builder.addOutput(name=self.directives['output_loc_name'])
+    o1 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_1_name'])
     self.builder.addDirectedLink(self, o1, oslot=1)
      
     # invQ oslot
     self._oslot_to_shape[2] = self.state_sizes[0] + [self.xdim]
-    o2 = self.builder.addOutput(name=self.directives['output_invQ_name'])
+    o2 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_2_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
 
     # A oslot
     self._oslot_to_shape[3] = self.state_sizes[0] + [self.xdim]
-    o3 = self.builder.addOutput(name=self.directives['output_A_name'])
+    o3 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_3_name'])
     self.builder.addDirectedLink(self, o3, oslot=3)
     
   def _get_A(self, scope_suffix=None):
@@ -264,8 +268,8 @@ class LDSNode(NormalNode):
                                                  covariance_matrix=cov)
     
     # Fill the oslots
-    mean_name = self.directives['output_loc_name']
-    invQ_name = self.directives['output_invQ_name']
+    mean_name = self.directives['output_1_name']
+    invQ_name = self.directives['output_2_name']
     self._oslot_to_otensor[0] = self.dist.sample(name='Out' + str(self.label) + '_0')
     self._oslot_to_otensor[1] = tf.identity(mean, name=mean_name)
     self._oslot_to_otensor[2] = tf.identity(invQ, name=invQ_name)
@@ -273,12 +277,12 @@ class LDSNode(NormalNode):
     
     self._is_built = True
     
-
+    
 class NormalPrecisionNode(NormalNode):
   """
   An InnerNode that takes an input and outputs a sample from a normal
-  distribution - with input-dependent mean and variance - with the variance
-  specified via its inverse, the precision matrix
+  distribution - with input-dependent mean and variance - with the covariance
+  specified by its inverse.
   """
   num_expected_outputs = 3
 
@@ -288,6 +292,7 @@ class NormalPrecisionNode(NormalNode):
                num_inputs=1,
                is_sequence=False,
                name=None,
+               name_prefix=None,
                **dirs):
     """
     Initialize a NormalInputNode
@@ -305,39 +310,37 @@ class NormalPrecisionNode(NormalNode):
       dirs (dict): A set of user specified directives for constructing this
           node
     """
+    name_prefix = name_prefix or 'NormalPrecision'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     super(NormalPrecisionNode, self).__init__(builder,
                                               state_sizes=state_sizes,
                                               num_inputs=num_inputs,
-                                              is_sequence=is_sequence)
-    self.name = "NormalPrecision_" + str(self.label) if name is None else name
+                                              is_sequence=is_sequence,
+                                              name_prefix=name_prefix,
+                                              **dirs)
     self.dist = None
 
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
-    # Slot names
-    self.oslot_to_name[1] = 'loc_' + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'precision_' + str(self.label) + '_2'
-    
-    self._update_directives(**dirs)
-    
     self._declare_secondary_outputs()
     
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    self.directives = {'num_layers' : 2,
+    this_node_dirs = {'num_layers' : 2,
                       'num_nodes' : 128,
-#                       'activation' : 'leaky_relu',
                       'activation' : 'softplus',
                       'net_grow_rate' : 1.0,
                       'share_params' : False,
-                      'output_loc_name' : self.name + '_' + str(1) + '_loc',
-                      'output_precision_name' : self.name + '_' + str(2) + '_precision',
+                      'output_1_name' : 'loc',
+                      'output_2_name' : 'precision',
                       'with_constant_precision' : False,
-                      'range_locNN_w' : 1.0}
-    self.directives.update(dirs)
+                      'range_locNN_w' : 1.0
+                      }
+    this_node_dirs.update(dirs)
+    super(NormalPrecisionNode, self)._update_directives(**this_node_dirs)
     
     # Deal with directives that map to tensorflow objects hidden from the client
     self.directives['activation'] = act_fn_dict[self.directives['activation']]
@@ -346,18 +349,20 @@ class NormalPrecisionNode(NormalNode):
     """
     Declare outputs for the statistics of the distribution (mean and standard
     deviation)
+    
+    TODo: Can also be done in the parent class!
     """
     main_oshape = self.state_sizes[0]
     osize = main_oshape[0]
     
     # Loc oslot
     self._oslot_to_shape[1] = main_oshape
-    o1 = self.builder.addOutput(name=self.directives['output_loc_name'])
+    o1 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_1_name'])
     self.builder.addDirectedLink(self, o1, oslot=1)
     
     # Precision oslot
     self._oslot_to_shape[2] = main_oshape + [osize]
-    o2 = self.builder.addOutput(name=self.directives['output_precision_name'])
+    o2 = self.builder.addOutput(name_prefix='Out_'+self.directives['output_2_name'])
     self.builder.addDirectedLink(self, o2, oslot=2)
     
   def _get_loc(self, _input, scope_suffix=None):
@@ -495,8 +500,8 @@ class NormalPrecisionNode(NormalNode):
                                                  covariance_matrix=cov)
     
     # Fill the oslots
-    mean_name = self.directives['output_loc_name']
-    lmbda_name = self.directives['output_precision_name']
+    mean_name = self.directives['output_1_name']
+    lmbda_name = self.directives['output_2_name']
     self._oslot_to_otensor[0] = self.dist.sample(name='Out' + 
                                                  str(self.label) + '_0')
     self._oslot_to_otensor[1] = tf.identity(mean, name=mean_name)
@@ -519,6 +524,7 @@ class NormalTriLNode(NormalNode):
                num_inputs=1,
                is_sequence=False,
                name=None,
+               name_prefix=None,
                **dirs):
     """
     Initialize a NormalInputNode
@@ -536,21 +542,18 @@ class NormalTriLNode(NormalNode):
       dirs (dict): A set of user specified directives for constructing this
           node
     """
+    name_prefix = name_prefix or 'NormalTriL'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     super(NormalTriLNode, self).__init__(builder,
                                          state_sizes=state_sizes,
                                          num_inputs=num_inputs,
-                                         is_sequence=is_sequence)
-    self.name = "NormalTriL_" + str(self.label) if name is None else name
+                                         is_sequence=is_sequence,
+                                         name_prefix=name_prefix,
+                                         **dirs)
     self.dist = None
 
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
-
-    # Slot names
-    self.oslot_to_name[1] = 'loc_' + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
-    
-    self._update_directives(**dirs)
     
     self._declare_secondary_outputs()
     
@@ -558,7 +561,7 @@ class NormalTriLNode(NormalNode):
     """
     Update the node directives
     """
-    self.directives = {'num_layers' : 2,
+    this_node_dirs = {'num_layers' : 2,
                       'num_nodes' : 128,
                       'activation' : 'leaky_relu',
                       'net_grow_rate' : 1.0,
@@ -568,7 +571,8 @@ class NormalTriLNode(NormalNode):
                       'output_2_name' : 'scale',
                       'range_locNN_w' : 1.0e-5,
                       'range_scaleNN_w' : 1.0}
-    self.directives.update(dirs)
+    this_node_dirs.update(dirs)
+    super(NormalTriLNode, self)._update_directives(**this_node_dirs)
     
     # Deal with directives that map to tensorflow objects hidden from the client
     self.directives['activation'] = act_fn_dict[self.directives['activation']]

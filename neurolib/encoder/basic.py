@@ -21,7 +21,7 @@ from neurolib.encoder import _globals as dist_dict
 from neurolib.encoder.anode import ANode
 from neurolib.utils.utils import basic_concatenation
     
-# pylint: disable=bad-indentation, no-member
+# pylint: disable=bad-indentation, abstract-method
 
 class InnerNode(ANode):
   """
@@ -38,27 +38,32 @@ class InnerNode(ANode):
   """
   def __init__(self,
                builder,
-               is_sequence=False):
+               is_sequence=False,
+               name_prefix=None,
+               **dirs):
     """
     Initialize the InnerNode
     
     Args:
-      label (int): A unique integer identifier for the InnerNode
+      builder (Builder): The builder object for the node
+      
+      is_sequence (bool): Do the node outputs have a sequential dimension?
     """
-    super(InnerNode, self).__init__()
-
-    self.builder = builder
-    self.label = builder.num_nodes
-    builder.num_nodes += 1
-
-    self.batch_size = builder.batch_size
-    self.max_steps = builder.max_steps if hasattr(builder, 'max_steps') else None
-    self.is_sequence = is_sequence
-
-    # Slot names
-    self.oslot_to_name[0] = 'main_' + str(self.label) + '_0'
+    super(InnerNode, self).__init__(builder,
+                                    is_sequence,
+                                    name_prefix=name_prefix,
+                                    **dirs)
     
-    self.directives = {'output_0_name' : 'main'}
+  def _update_directives(self, **dirs):
+    """
+    Update the node directives
+    
+    Add the directives for specific of this class and propagate up the class
+    hierarchy
+    """
+    this_node_dirs = {'output_0_name' : 'main'}
+    this_node_dirs.update(dirs)
+    super(InnerNode, self)._update_directives(**this_node_dirs)
                   
   def __call__(self, inputs=None):
     """
@@ -69,13 +74,14 @@ class InnerNode(ANode):
   @abstractmethod
   def _build(self):
     """
+    Build the node
     """
     raise NotImplementedError("Please implement me.")
 
  
 class CopyNode(InnerNode):
   """
-  A utility node that copies its input to its output.
+  Utility node that copies its input to its output.
   """
   num_expected_outputs = 1
   num_expected_inputs = 1

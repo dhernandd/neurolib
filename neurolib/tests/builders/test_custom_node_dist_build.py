@@ -21,9 +21,10 @@ import tensorflow as tf
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.normal import NormalTriLNode
 
-NUM_TESTS = 3
-run_up_to_test = 3
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 1
+run_from = 0
+run_to = 1
+tests_to_run = list(range(run_from, run_to))
 
 
 class CustomEncoderNormalTest(tf.test.TestCase):

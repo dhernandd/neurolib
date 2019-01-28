@@ -120,7 +120,10 @@ class StaticBuilder(Builder):
     return name
     
   @check_name
-  def addOutput(self, name=None):
+  def addOutput(self,
+                name=None,
+                name_prefix=None,
+                is_sequence=False):
     """
     Add an OutputNode to the Encoder Graph
     
@@ -128,7 +131,9 @@ class StaticBuilder(Builder):
       name (str): Unique identifier for the Output Node
     """
     out_node = OutputNode(self,
-                          name=name)
+                          name=name,
+                          name_prefix=name_prefix,
+                          is_sequence=is_sequence)
     name = out_node.name
     self.output_nodes[name] = self.nodes[name] = out_node 
     self._label_to_node[out_node.label] = out_node
@@ -261,8 +266,8 @@ class StaticBuilder(Builder):
     node2.num_declared_inputs += 1
     node2.free_islots.remove(islot)
 #     print("stb; node1.oslot_to_name", node1.oslot_to_name, node1.name)
-    node2.islot_to_name[islot] = (node1.oslot_to_name[oslot] if name is None
-                                   else name)
+#     node2.islot_to_name[islot] = (node1.oslot_to_name[oslot] if name is None
+#                                    else name)
 
     # Initialize _built_parents for the child node.
     node2._built_parents[node1.label] = False
@@ -273,16 +278,21 @@ class StaticBuilder(Builder):
       
   def addMergeNode(self,
                    state_size,
-                   nodes,
+                   node_list=None,
+                   node_dict=None,
+                   parents_to_oslot_tuples=None,
                    merge_class=None,
+                   name=None,
                    **dirs):
     """
     Merge two or more nodes
     """
-    nodes = [self.nodes[node_name] for node_name in nodes]
     merger = merge_class(self,
                          state_size,
-                         nodes,
+                         node_list=node_list,
+                         node_dict=node_dict,
+                         parents_to_oslot_tuples=parents_to_oslot_tuples,
+                         name=name,
                          **dirs)
     name = merger.name
     self.nodes[name] = merger
