@@ -84,7 +84,6 @@ class InputNode(ANode):
     """
     Update this node directives
     """
-    print("self", self)
     self.directives = {'output_0_name' : 'main',}
     self.directives.update(dirs)
     
@@ -153,10 +152,10 @@ class PlaceholderInputNode(InputNode):
     """
     Update default directives
     """
-    super(PlaceholderInputNode, self)._update_directives()
+    this_node_dirs = {'dtype' : 'float64'}
+    this_node_dirs.update(dirs)
     
-    self.directives.update({'dtype' : 'float64'})
-    self.directives.update(dirs)
+    super(PlaceholderInputNode, self)._update_directives(**this_node_dirs)
     
   def _build(self):
     """
@@ -164,16 +163,18 @@ class PlaceholderInputNode(InputNode):
     
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
-    name = self.name
-    out_shape = self.main_oshapes
-    for oslot, out_shape in enumerate(self.main_oshapes):
-      self._oslot_to_otensor[oslot] = tf.placeholder(self.dtype,
-                                                     shape=out_shape,
-                                                     name=name)
+    name = self.name + '_' + self.directives['output_0_name']
+    out_shape, oslot = self.main_oshapes[0], 0
+    o0 = tf.placeholder(self.dtype, shape=out_shape, name=name)
+    o0_rname = self.name + ':' + self.directives['output_0_name']
+    self._oslot_to_otensor[oslot] = o0
+    self.builder.otensor_names[o0_rname] = o0.name
+    
     self._is_built = True
 
   def __call__(self, inputs, state):
     """
+    Call the node with some inputs
     """
     InputNode.__call__(self, inputs, state)
 
@@ -250,13 +251,11 @@ class NormalInputNode(InputNode):
     """
     Update the node directives
     """
-    print("NormalInputNode, _update_directives")
     this_node_dirs = {'output_1_name' : 'loc',
                       'output_2_name' : 'scale'}
     this_node_dirs.update(dirs)
     
     super(NormalInputNode, self)._update_directives(**this_node_dirs)
-    print("self.directives", self.directives)
         
   def _declare_secondary_outputs(self):
     """
@@ -298,39 +297,28 @@ class NormalInputNode(InputNode):
     Assign the Cholesky decomposition of the covariance from self.dist to
     _oslot_to_otensor[2]
     """
-#     oshape = self.main_oshapes[0]
-#     sc_oshape = oshape + oshape[-1:]
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       if self.is_sequence and self.max_steps is None:
         loc = tf.get_variable('loc',
                               dtype=self.dtype,
                               initializer=self.loc_init,
                               validate_shape=True)
-#                               validate_shape=False)
         scale = tf.get_variable('scale',
                                 dtype=self.dtype,
                                 initializer=self.sc_init,
                                 validate_shape=True)
-#                                 validate_shape=False)
       else:
         li = tf.zeros([self.xdim], dtype=self.dtype)
-#         dz = tf.tile(tf.zeros([self.xdim], tf.float64), self.dummy_bsz)
         loc_dist = tf.get_variable('loc',
-                              dtype=self.dtype,
-                              initializer=li)
-#                               validate_shape=True)
-#                               validate_shape=False)
+                                   dtype=self.dtype,
+                                   initializer=li)
         loc = tf.tile(loc_dist, self.dummy_bsz)
         loc = tf.reshape(loc, [-1, self.xdim])
-#         self.loc_init = tf.reshape(loc, [-1, self.xdim])
-#         loc.set_shape([None, self.xdim])
         
         si = tf.eye(self.xdim, dtype=self.dtype)
         scale = tf.get_variable('scale',
                                 dtype=self.dtype,
                                 initializer=si)
-#                                 validate_shape=True)
-#                                 validate_shape=False)
         scale_dist = tf.linalg.LinearOperatorFullMatrix(scale)
         scale = tf.reshape(scale, [-1])
         scale = tf.tile(scale, self.dummy_bsz)
@@ -348,11 +336,9 @@ class NormalInputNode(InputNode):
     o1_name = self.name + '_' + self.directives['output_1_name']
     self._oslot_to_otensor[1] = tf.identity(loc, name=o1_name)
     print("self._oslot_to_otensor[1]", self._oslot_to_otensor[1])
-#     assert self._oslot_to_otensor[1].shape.as_list() == self._oslot_to_shape[1]
     
     o2_name = self.name + '_' + self.directives['output_2_name']
     self._oslot_to_otensor[2] = tf.identity(scale, name=o2_name)
-#     assert self._oslot_to_otensor[2].shape.as_list() == self._oslot_to_shape[2]
 
     self._is_built = True
 

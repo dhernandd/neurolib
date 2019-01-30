@@ -22,8 +22,10 @@ from neurolib.models.regression import Regression
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 1
-run_test = 1
+# NUM_TESTS : 1
+range_from = 0
+range_to = 1
+tests_to_run = list(range(range_from, range_to))
 
 def generate_some_data():
   """
@@ -31,10 +33,10 @@ def generate_some_data():
   x = 10.0*np.random.randn(100, 2)
   y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
   xtrain, xvalid, ytrain, yvalid = x[:80], x[80:], y[:80], y[80:]
-  dataset = {'train_observation_in' : xtrain,
-             'train_observation_out' : ytrain,
-             'valid_observation_in' : xvalid,
-             'valid_observation_out' : yvalid}
+  dataset = {'train_features' : xtrain,
+             'train_observation' : ytrain,
+             'valid_features' : xvalid,
+             'valid_observation' : yvalid}
   return dataset
 
 class RegressionTestTrain(tf.test.TestCase):
@@ -46,7 +48,7 @@ class RegressionTestTrain(tf.test.TestCase):
     """
     tf.reset_default_graph()
   
-  @unittest.skipIf(run_test != 1, "Skipping")
+  @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_train(self):
     """
     Test train
@@ -55,7 +57,8 @@ class RegressionTestTrain(tf.test.TestCase):
     
     dataset = generate_some_data()
     
-    dc = Regression(input_dim=2, output_dim=1)
+    dc = Regression(input_dim=2,
+                    output_dim=1)
     dc.build()
     dc.train(dataset, num_epochs=10) # train
     

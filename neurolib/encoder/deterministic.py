@@ -155,9 +155,12 @@ class DeterministicNNNode(InnerNode):
     Build the DeterministicNNNode
     """
     output = self._get_output(islot_to_itensor=self._islot_to_itensor)
-    
-    output_name = self.name + self.directives['output_0_name']
-    self._oslot_to_otensor[0] = tf.identity(output, output_name) 
+
+    name = self.name + '_' + self.directives['output_0_name']
+    o0 = tf.identity(output, name)
+    self._oslot_to_otensor[0] = tf.identity(output, name) 
+    o0_rname = self.name + ':' + self.directives['output_0_name']
+    self.builder.otensor_names[o0_rname] = o0.name
       
     self._is_built = True
     

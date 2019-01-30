@@ -31,9 +31,9 @@ class DeepKalmanFilter(Model):
   TODO:
   """
   def __init__(self,
+               builder=None,
                input_dims=None,
                state_dims=None,
-               builder=None,
                batch_size=1,
                max_steps=25,
                rnn_cell_class='basic',
@@ -75,6 +75,11 @@ class DeepKalmanFilter(Model):
     """
     super(DeepKalmanFilter, self).__init__()
     
+    self._main_scope = 'DKF'
+    self.root_rslt_dir = root_rslts_dir
+    self.save = save_on_valid_improvement
+    self.keep_logs = keep_logs
+
     self.builder = builder
     if self.builder is None:
       self._is_custom_build = False
@@ -88,9 +93,6 @@ class DeepKalmanFilter(Model):
         if len(state_dims) < 2:
           raise ValueError("Argument `state_dims` must be a list of size >=2, "
                            "(len(state_dims) = {})".format(len(state_dims)))
-#       if output_dims is None and not is_categorical:
-#         raise ValueError("Argument output_dims is required to build the default "
-#                          "RNNClassifier")
       if num_labels is None and is_categorical:
         raise ValueError("Argument num_labels is required to build the default "
                          "RNNClassifier")
@@ -128,11 +130,6 @@ class DeepKalmanFilter(Model):
     
     self.batch_size = batch_size
     self.max_steps = max_steps
-    
-    self._main_scope = 'DKF'
-    self.root_rslt_dir = root_rslts_dir
-    self.save = save_on_valid_improvement
-    self.keep_logs = keep_logs
     
     self._update_default_directives(**dirs)
 
@@ -218,17 +215,18 @@ class DeepKalmanFilter(Model):
                              save_on_valid_improvement=self.save,
                              keep_logs=self.keep_logs,
                              **self.tr_dirs)
-      
-    self.store_names_dict()
+    self.save_otensor_names()
     
     self._is_built = True
 
-  def store_names_dict(self):
+  def save_otensor_names(self):
     """
+    Save tensor names on a separate file for easy access on restore.
     """
     if self.save:
       rslt_dir = self.trainer.rslt_dir
-      onames = set()
+#       onames = set()
+      onames = dict()
       with open(rslt_dir + 'output_names', 'wb') as f1:
         for node_name in self.builder.nodes:
           node = self.builder.nodes[node_name]

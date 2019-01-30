@@ -172,7 +172,6 @@ class fLDS(Model):
       ins1 = builder.addInnerSequence([[xdim]], num_inputs=1, node_class=NormalPrecisionNode)
       evs1 = builder.addEvolutionSequence([[xdim]],
                                           num_inputs=1,
-#                                           num_outputs=1,
                                           cell_class=LDSCell)
       m1 = builder.addMergeNode([[xdim]],
                                 node_list=[ins1, evs1],
@@ -186,29 +185,7 @@ class fLDS(Model):
       os1 = builder.addOutputSequence(name='prediction')
       builder.addDirectedLink(is1, ins1)
       builder.addDirectedLink(m1, ins2)
-      builder.addDirectedLink(ins2, os1)     
-#       for j, idim in enumerate(self.input_dims):
-#         is1 = builder.addInputSequence([idim], name='observation_'+str(j)) # FIX!
-#       evs1 = builder.addEvolutionSequence(state_sizes=self.rnn_state_dims,
-#                                           num_inputs=self.num_inputs_rnn,
-#                                           cell_class=self.rnn_cell_class,
-#                                           name='RNN',
-#                                           **dirs)
-#       evs2 = builder.addEvolutionSequence(state_sizes=self.ds_dims,
-#                                           num_inputs=self.num_inputs_ds,
-#                                           ev_seq_class=NonlinearDynamicswGaussianNoise,
-#                                           name='Recognition',
-#                                           **dirs)
-#       inn1 = builder.addInnerSequence(self.input_dims[:1],
-#                                       node_class=NormalTriLNode,
-#                                       name='Generative')
-#       os1 = builder.addOutputSequence(name='prediction')
-#             
-#       builder.addDirectedLink(is1, evs1, islot=self.num_rnn_state_dims)
-#       print("dkf; self.num_inputs_ds", self.num_inputs_ds)
-#       builder.addDirectedLink(evs1, evs2, islot=self.num_ds_dims)
-#       builder.addDirectedLink(evs2, inn1)
-#       builder.addDirectedLink(inn1, os1)      
+      builder.addDirectedLink(ins2, os1)         
     else:
       self._check_custom_build()
       builder.scope = self._main_scope

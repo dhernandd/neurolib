@@ -52,6 +52,9 @@ class Builder(abc.ABC):
     self.input_nodes = {}
     self.output_nodes = {}
     self._label_to_node = {}
+    
+    # Dictionaries for restoring a model
+    self.otensor_names = {}
 
   @check_name
   def addInner(self,

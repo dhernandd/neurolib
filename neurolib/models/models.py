@@ -14,9 +14,12 @@
 #
 # ==============================================================================
 import abc
+import pickle
+import os
 from abc import abstractmethod
 
 import numpy as np
+import tensorflow as tf
 
 from neurolib.utils.graphs import get_session
 
@@ -64,8 +67,11 @@ class Model(abc.ABC):
     two models and compare for example. Although, a comparison is naturally
     external to each model. I think that what I want to do in fact is produce plo
     """
-    self.inputs = {}
-    self.outputs = {}
+#     self.inputs = {}
+#     self.outputs = {}
+    tf.reset_default_graph()
+    self.sess = tf.Session()
+    
     self._is_built = False
     
   @property
@@ -92,6 +98,15 @@ class Model(abc.ABC):
     """
     raise NotImplementedError("")
 
+  def prepare_dataset(self, dataset):
+    """
+    """
+    scope = self.main_scope
+    dset = {}
+    for key in dataset:
+      dset[scope + '/' + key + '_main:0'] = dataset[key]
+    return dset
+      
   def prepare_datasets(self, dataset):
     """
     Split the dataset dictionary into train, validation and test datasets.
@@ -103,11 +118,11 @@ class Model(abc.ABC):
     for key in dataset:
       d_set, inode = key.split('_')[0], "_".join(key.split('_')[1:])
       if d_set == 'train':
-        train_dataset[scope + '/' + inode + ':0'] = dataset[key]
+        train_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
       elif d_set == 'valid':
-        valid_dataset[scope + '/' + inode + ':0'] = dataset[key]
+        valid_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
       elif d_set == 'test':
-        test_dataset[scope + '/' + inode + ':0'] = dataset[key]
+        test_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
       else:
         raise KeyError("The dataset contains the key `{}`. The only allowed "
                        "prefixes for keys in the dataset are 'train', "
@@ -181,3 +196,54 @@ class Model(abc.ABC):
     """
     return {'_'.join(key.split('_')[1:]) : value for key, value 
             in self.directives.items() if key.startswith(prefix)}
+    
+  @staticmethod
+  def get_latest_metafile_in_rslt_dir(rslt_dir):
+    """
+    Return the latest metafile in the provided directory
+    """
+    prefixes = [file[:-5] for file in os.listdir(rslt_dir) if 'meta'==file.split('.')[-1]]
+    return max([f for f in prefixes], key=lambda f : int(f.split('-')[-1])) + '.meta'
+
+  def _restore(self, metafile=None):
+    """
+    Restore a saved model 
+    """
+    rslt_dir = self.rslt_dir
+    if metafile is None:
+      metafile = self.get_latest_metafile_in_rslt_dir(rslt_dir)
+      print("... from metafile {}".format(metafile))
+      saver = tf.train.import_meta_graph(rslt_dir+metafile)
+    else:
+      saver = tf.train.import_meta_graph(rslt_dir+metafile)
+    
+    saver.restore(self.sess, tf.train.latest_checkpoint(rslt_dir))
+    self.sess.run(tf.global_variables_initializer())
+
+  def save_otensor_names(self):
+    """
+    Store a user friendly hash to whose values are the names of the output
+    tensors of every node
+    """
+    rslt_dir = self.trainer.rslt_dir
+    with open(rslt_dir + 'output_names', 'wb') as f1:
+      print("self.builder.otensor_names", self.builder.otensor_names)
+      pickle.dump(self.otensor_names, f1)
+    
+    return self.otensor_names
+
+  def eval(self, names, dataset, key=None):
+    """
+    Evaluate an op given an input dataset.
+    """
+    sess = self.sess
+    if isinstance(names, str): names = [names]
+    opnames = [self.ops_names[name] for name in names]
+    
+    if key is None:
+      fd = self.prepare_dataset(dataset)
+    else:
+      dataset_dict = self.prepare_datasets(dataset)
+      fd = dataset_dict[key]
+    
+    return sess.run(opnames, feed_dict=fd)

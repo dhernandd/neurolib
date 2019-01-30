@@ -36,6 +36,7 @@ class Restore():
     
     tf.reset_default_graph()
     self.sess = tf.Session()
+    
     rslt_dir = rslt_dir if rslt_dir[-1] == '/' else rslt_dir + '/'
     self.rslt_dir = rslt_dir
     if metafile is None:
@@ -53,6 +54,7 @@ class Restore():
   @staticmethod
   def get_latest_metafile_in_rslt_dir(rslt_dir):
     """
+    Return the latest metafile in the provided directory
     """
     prefixes = [file[:-5] for file in os.listdir(rslt_dir) if 'meta'==file.split('.')[-1]]
     return max([f for f in prefixes], key=lambda f : int(f.split('-')[-1])) + '.meta'
