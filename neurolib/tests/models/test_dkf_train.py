@@ -13,10 +13,8 @@
 # limitations under the License.
 #
 # ==============================================================================
-import os.path
-
-my_path = os.path.abspath(os.path.dirname(__file__))
-
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
 import pickle
 
@@ -26,10 +24,14 @@ from neurolib.models.dkf import DeepKalmanFilter
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 2
+# NUM_TESTS : 1
 range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
+
+fname = '/datadict_gaussianobs2D'
+with open(path + fname, 'rb') as f:
+  datadict = pickle.load(f)
 
 class DKFTestTrain(tf.test.TestCase):
   """
@@ -46,24 +48,19 @@ class DKFTestTrain(tf.test.TestCase):
     print("\nTest 1: DKF train")
 
     dataset = {}
-    fname = my_path + '/datadict_gaussianobs2D'
-    with open(fname, 'rb') as f:
-      datadict = pickle.load(f)
-      Ytrain = datadict['Ytrain']
-      Yshape = Ytrain.shape
-      print("Yshape", Yshape)
-      dataset['train_observation_0'] = Ytrain
-      dataset['valid_observation_0'] = datadict['Yvalid']
-      max_steps, input_dims = Yshape[-2], Yshape[-1]
+    Ytrain = datadict['Ytrain']
+    Yshape = Ytrain.shape
+    print("Yshape", Yshape)
+    dataset['train_Observation_0'] = Ytrain
+    dataset['valid_Observation_0'] = datadict['Yvalid']
+    max_steps, input_dims = Yshape[-2], Yshape[-1]
       
     dkf = DeepKalmanFilter(input_dims=[[input_dims]],
+                           rnn_state_dims=[[40]],
+                           ds_state_dim=[[4]], # logs and save implemented
                            max_steps=max_steps,
-                           batch_size=1,
-                           state_dims=[[40], [4]], # logs and save implemented
-                           keep_logs=True,
-                           save_on_valid_improvement=True,
-                           root_rslts_dir='./rslts/')
-    dkf.build()
+                           batch_size=1)
+#                            save_on_valid_improvement=True) # OK!
     dkf.train(dataset, num_epochs=10)
     
 

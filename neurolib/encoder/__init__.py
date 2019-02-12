@@ -40,6 +40,8 @@ for dist_name in sorted(dir(_distributions)):
 __all__ = ["MultivariateNormalTriL"]  #pylint: disable=undefined-all-variable
 
 act_fn_dict = {'relu' : tf.nn.relu,
-               'leaky_relu' : tf.nn.leaky_relu}
+               'leaky_relu' : tf.nn.leaky_relu,
+               'None' : None,
+               'softplus' : tf.nn.softplus}
 
 layers_dict = {'full' : fully_connected}

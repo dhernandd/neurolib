@@ -15,11 +15,8 @@
 # ==============================================================================
 from abc import abstractmethod
 
-import tensorflow as tf
-
 from neurolib.encoder import _globals as dist_dict
 from neurolib.encoder.anode import ANode
-from neurolib.utils.utils import basic_concatenation
     
 # pylint: disable=bad-indentation, abstract-method
 
@@ -33,8 +30,6 @@ class InnerNode(ANode):
   InputNode. InnerNodes have num_inputs > 0 and num_outputs > 0. Its outputs can
   be deterministic, as in the DeterministicNNNode, or stochastic, as in the
   NormalTriLNode.
-  
-  The InnerNode should implement `__call__` and `_build`.
   """
   def __init__(self,
                builder,
@@ -61,11 +56,16 @@ class InnerNode(ANode):
     Add the directives for specific of this class and propagate up the class
     hierarchy
     """
-    this_node_dirs = {'output_0_name' : 'main'}
+    this_node_dirs = {'outputname_0' : 'main'}
     this_node_dirs.update(dirs)
     super(InnerNode, self)._update_directives(**this_node_dirs)
+    
+  def get_outputs(self, islot_to_itensor=None):
+    """
+    """
+    raise NotImplementedError("Please implement me")
                   
-  def __call__(self, inputs=None):
+  def __call__(self, *inputs):
     """
     Call the node transformation on inputs, return the outputs.
     """
@@ -78,45 +78,6 @@ class InnerNode(ANode):
     """
     raise NotImplementedError("Please implement me.")
 
- 
-class CopyNode(InnerNode):
-  """
-  Utility node that copies its input to its output.
-  """
-  num_expected_outputs = 1
-  num_expected_inputs = 1
-
-  def __init__(self,
-               builder,
-               name=None):
-    """
-    Initialize the CopyNode
-    """
-    super(CopyNode, self).__init__(builder)
-    self.name = "Copy_" + str(self.label) if name is None else name
-    
-  def __call__(self, inputs=None, islot_to_itensor=None):
-    """
-    Call the CopyNode
-    """
-    if inputs is not None:
-      _input = basic_concatenation(inputs)
-    else:
-      _input = basic_concatenation(islot_to_itensor)
-    
-    return _input
-  
-  def _build(self):
-    """
-    Build the CopyNode
-    """
-    output = _input = self._islot_to_itensor[0] # make sure the inputs are ordered
-    output_name = self.name + '_out'
-    
-    self._oslot_to_otensor[0] = tf.identity(output, output_name)
-    
-    self._is_built = True
-    
     
 if __name__ == '__main__':
   print(dist_dict)

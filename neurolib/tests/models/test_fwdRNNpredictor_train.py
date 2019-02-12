@@ -13,9 +13,11 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
+import pickle
 
-import numpy as np
 import tensorflow as tf
 
 from neurolib.models.predictor_rnn import PredictorRNN
@@ -26,45 +28,11 @@ from neurolib.models.predictor_rnn import PredictorRNN
 range_from = 0
 range_to = 3
 tests_to_run = list(range(range_from, range_to))
-test_to_run = 10
 
-def generate_echo_data(length, echo_step, max_steps):
-  """
-  Generate some echo data
-  """
-  x = np.array(np.random.normal(size=length))
-  y = np.roll(x, echo_step)
-  y[0:echo_step] = 0
-  
-  X = np.reshape(x, [-1, max_steps, 1])
-  Y = np.reshape(y, [-1, max_steps, 1])
-
-  dataset = {'train_observation_in' : X[:300],
-             'train_observation_out' : Y[:300],
-             'valid_observation_in' : X[300:],
-             'valid_observation_out' : Y[300:]}
-
-  return dataset
-
-def generate_echo_data_cat(num_labels, length, echo_step, max_steps):
-  """
-  Generate some echo categorical data
-  """
-  p = num_labels*[1/num_labels]
-  x = np.array(np.random.choice(num_labels, length, p=p))
-  y = np.roll(x, echo_step)
-  y[0:echo_step] = 0
-
-  X = np.reshape(x, [-1, max_steps, 1])
-  Y = np.reshape(y, [-1, max_steps, 1])
-
-  dataset = {'train_observation_in' : X[:300],
-             'train_observation_out' : Y[:300],
-             'valid_observation_in' : X[300:],
-             'valid_observation_out' : Y[300:]}
-
-  return dataset
-
+with open(path + '/datadict_seq01', 'rb') as f1:
+  dataset = pickle.load(f1)
+with open(path + '/datadict_seq01cat', 'rb') as f1:
+  dataset_cat = pickle.load(f1)
 
 class RNNPredictorTrainTest(tf.test.TestCase):
   """
@@ -80,16 +48,13 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     """
     Test train Basic RNN : continuous data
     """
-    max_steps = 25
-    echo_step = 3
-    dataset = generate_echo_data(10000, echo_step, max_steps)
+    max_steps = dataset['train_Observation'].shape[1]
     
     model = PredictorRNN(input_dims=1,
                          state_dims=20,
                          output_dims=1,
-                         batch_size=1,
                          max_steps=max_steps)
-    model.build()
+#                          save_on_valid_improvement=True) # ok!
     model.train(dataset, num_epochs=10)
     
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
@@ -97,29 +62,24 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     """
     Test train Basic RNN : categorical data
     """
+    max_steps = dataset['train_Observation'].shape[1]
     num_labels = 4
-    max_steps = 25
-    echo_step = 3
-    dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
     
     model = PredictorRNN(input_dims=1,
                          state_dims=20,
                          output_dims=1,
-                         batch_size=1,
                          max_steps=max_steps,
                          num_labels=num_labels,
                          is_categorical=True)
-    model.build()
-    model.train(dataset, num_epochs=10)
+#                          save_on_valid_improvement=True) # OK!
+    model.train(dataset_cat, num_epochs=10)
     
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
   def test_train2(self):
     """
     Test train LSTM RNN : continuous outputs
     """
-    max_steps = 25
-    echo_step = 3
-    dataset = generate_echo_data(10000, echo_step, max_steps)
+    max_steps = dataset['train_Observation'].shape[1]
     
     model = PredictorRNN(input_dims=1,
                          state_dims=20,
@@ -127,32 +87,13 @@ class RNNPredictorTrainTest(tf.test.TestCase):
                          batch_size=1,
                          max_steps=max_steps,
                          cell_class='lstm')
-    model.build()
-    model.train(dataset, num_epochs=10)
-    
-    
-  @unittest.skipIf(test_to_run != 100, "Skipping")
-  def test_save(self):
-    """
-    Test save:
-    """
-    num_labels = 4
-    max_steps = 25
-    echo_step = 3
-    dataset = generate_echo_data_cat(num_labels, 10000, echo_step, max_steps)
-    
-    model = PredictorRNN(input_dims=1,
-                         state_dims=20,
-                         output_dims=1,
-                         batch_size=1,
-                         max_steps=max_steps,
-                         num_labels=num_labels,
-                         is_categorical=True,
-                         save=True,
-                         rslt_dir='')
-    model.build()
-    model.train(dataset, num_epochs=20)
+#                          save_on_valid_improvement=True) # OK!
+    for _ in range(10):
+      R2 = model.anal_R2(dataset, 'valid')
+      print("R2", R2)
+      model.train(dataset, num_epochs=3)
     
     
 if __name__ == '__main__':
-  unittest.main(failfast=True) 
+  unittest.main(failfast=True)
+  

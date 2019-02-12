@@ -45,18 +45,17 @@ class CustomEncoderNormalTest(tf.test.TestCase):
     cust = builder.createCustomNode(num_inputs=1,
                                     num_outputs=1,
                                     name="Custom")
+    cust_in0 = cust.addInner(2)
     cust_in1 = cust.addInner(3, node_class=NormalTriLNode)
-    cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareOslot(oslot=0, innernode_name=cust_in1, inode_oslot=0)
-    cust.commit()
+    cust.addDirectedLink(cust_in0, cust_in1, 0)
+    cust.declareIslot(islot=0, innernode_name=cust_in0, inode_islot=0)
+    cust.declareOslot(oslot='main', innernode_name=cust_in1, inode_oslot='scale')
     
     i1 = builder.addInput(10)
-    o1 = builder.addOutput()
-    builder.addDirectedLink(i1, cust)
-    builder.addDirectedLink(cust, o1, oslot=0)
-     
+    builder.addDirectedLink(i1, cust, islot=0)     
     builder.build()
+    print(cust._oslot_to_otensor)
     
 
 if __name__ == "__main__":
-  tf.test.main()
+  unittest.main(failfast=True)

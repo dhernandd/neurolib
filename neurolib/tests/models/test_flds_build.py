@@ -21,9 +21,9 @@ from neurolib.models.flds import fLDS
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 2
+# NUM_TESTS : 1
 range_from = 0
-range_to = 2
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
 class FLDSTestBuild(tf.test.TestCase):
@@ -40,17 +40,8 @@ class FLDSTestBuild(tf.test.TestCase):
     """
     print("\nTest 0: DKF initialization")
     fLDS(input_dims=[[10]],
-         state_dims=[[3]])
+         state_dim=[[3]])
   
-  @unittest.skipIf(1 not in tests_to_run, "Skipping")
-  def test_build(self):
-    """
-    """
-    print("\nTest 1: DKF build")
-    flds = fLDS(input_dims=[[10]],
-                state_dims=[[3]])
-    flds.build()
-
 
 if __name__ == '__main__':
   unittest.main(failfast=True)

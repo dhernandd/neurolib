@@ -13,9 +13,11 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
+import pickle
 
-import numpy as np
 import tensorflow as tf
 
 from neurolib.models.regression import Regression
@@ -27,17 +29,8 @@ range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
-def generate_some_data():
-  """
-  """
-  x = 10.0*np.random.randn(100, 2)
-  y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
-  xtrain, xvalid, ytrain, yvalid = x[:80], x[80:], y[:80], y[80:]
-  dataset = {'train_features' : xtrain,
-             'train_observation' : ytrain,
-             'valid_features' : xvalid,
-             'valid_observation' : yvalid}
-  return dataset
+with open(path + '/datadict_regression', 'rb') as f1:
+  dataset = pickle.load(f1)
 
 class RegressionTestTrain(tf.test.TestCase):
   """
@@ -54,13 +47,12 @@ class RegressionTestTrain(tf.test.TestCase):
     Test train
     """
     print("\nTest 0: Regression train")
-    
-    dataset = generate_some_data()
-    
+        
     dc = Regression(input_dim=2,
                     output_dim=1)
-    dc.build()
-    dc.train(dataset, num_epochs=10) # train
+#                     save_on_valid_improvement=True) # ok!
+    dc.train(dataset,
+             num_epochs=10) # train
     
     
 if __name__ == '__main__':

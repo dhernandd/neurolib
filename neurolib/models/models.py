@@ -22,6 +22,10 @@ import numpy as np
 import tensorflow as tf
 
 from neurolib.utils.graphs import get_session
+from neurolib.trainer.costs import (mse, mabsdiff, elbo, 
+                                    cross_entropy_with_logits,
+                                    entropy, logprob)
+from _collections import defaultdict
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -53,68 +57,120 @@ class Model(abc.ABC):
     
   The Model classes should implement at the very least the following methods
   
+  build(...)
   train(...)
-  sample(...)
   """
-  def __init__(self):
+  summaries_dict = {'mse' : mse,
+                    'mabsdiff' : mabsdiff,
+                    'elbo' : elbo,
+                    'cross_entropy_wlogits' : cross_entropy_with_logits,
+                    'entropy' : entropy,
+                    'logprob' : logprob}
+
+  def __init__(self,
+               **dirs):
     """
-    TODO: Should I start a session here? This presents some troubles right now,
-    at least with this implementation of get_session which I am beginning to
-    suspect it is not going to cut it for our purposes. The sessions needs to be
-    micromanaged...
+    Initialize a Model.
     
-    TODO: I also want to manually manage the graphs for when people want to run
-    two models and compare for example. Although, a comparison is naturally
-    external to each model. I think that what I want to do in fact is produce plo
+    Starts a tf.Session for this Model
     """
-#     self.inputs = {}
-#     self.outputs = {}
-    tf.reset_default_graph()
     self.sess = tf.Session()
+    
+    self.directives = {}
+    self._update_default_directives(**dirs)
+    self.split_model_directives()
     
     self._is_built = False
     
   @property
   def main_scope(self):
     """
+    Return the main_scope of the model
     """
     return self._main_scope
       
-  @abstractmethod
-  def build(self):
+  def _update_default_directives(self, **dirs):
     """
+    Update the Model directives
     """
-    raise NotImplementedError("")
-        
-  def update(self, dataset):
-    """
-    Carry a single update on the model  
-    """
-    self.trainer.update(dataset)
+    self.directives = {'tr_trainer' : 'gd',
+                       'tr_optimizer' : 'adam'}
+    self.directives.update(dirs)
 
-  @abstractmethod
-  def train(self, dataset, num_epochs, **dirs):
+  def split_model_directives(self):
     """
     """
-    raise NotImplementedError("")
-
-  def prepare_dataset(self, dataset):
+    dirs = self.directives
+    split_directives = defaultdict(dict)
+    for d in dirs:
+      dsplit = d.split('_')
+      if len(dsplit) == 1:
+        split_directives['model'][d] = dirs[d]
+      else:
+        split_directives[dsplit[0]]['_'.join(dsplit[1:])] = dirs[d]
+    
+    self.directives = split_directives
+    
+  def add_dummies_to_dataset(self, dataset, batch_size=None):
     """
+    Make a feed_dict for sess.run from a dataset.
+    
+    In particular, add inputs for all the dummy variables defined by the Builder
+    associated to this model
+    """
+    if batch_size is None:
+      batch_size = list(dataset.values())[0].shape[0]
+    for key in self.dummies:
+      dummy_name = self.dummies[key]
+      dataset[dummy_name] = np.array([batch_size], dtype=np.int32)
+      
+    return dataset
+    
+  def prepare_dataset(self, dataset, batch_size=None):
+    """
+    Modify the keys of the dataset to fit neurolib + tensorflow expectations.
+    
+    Specifically, data to a neurolib model is always through an InputNode with a
+    single oslot. The name of the outgoing tensor from this oslot, as accessed
+    via the `name` property of the Op always has the structure
+    
+      'ModelScope/NodeName_main:0'
+      
+    This function takes a dataset with keys corresponding to the InputNodes
+    names and returns the same dataset with the keys modified to fit the pattern
+    above.
     """
     scope = self.main_scope
     dset = {}
     for key in dataset:
       dset[scope + '/' + key + '_main:0'] = dataset[key]
+    if batch_size is None:
+      bsz = dataset[key].shape[0]  #pylint: disable=undefined-loop-variable
+    dset = self.add_dummies_to_dataset(dataset, bsz)
     return dset
       
   def prepare_datasets(self, dataset):
     """
-    Split the dataset dictionary into train, validation and test datasets.
+    Take a dataset whose keys have the form
+    
+        prefix_InputNode
+        
+    where prefix is one of 'train', 'valid' or 'test' and splits it into
+    training, validation and test datasets.
+    
+    Args:
+      dataset (dict) : A dataset whose keys are strings with the form 'prefix_InputNode'
+          
+    Returns:
+      A dict with keys 'train', 'valid', 'test' whose values are dicts
+      themselves, the values of the latter being the data, keyed by the names of
+      the InputNodes that will be fed with it.
     """
     scope = self.main_scope
     train_dataset = {}
     valid_dataset = {}
     test_dataset = {}
+    common_keys = []
     for key in dataset:
       d_set, inode = key.split('_')[0], "_".join(key.split('_')[1:])
       if d_set == 'train':
@@ -124,16 +180,27 @@ class Model(abc.ABC):
       elif d_set == 'test':
         test_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
       else:
-        raise KeyError("The dataset contains the key `{}`. The only allowed "
-                       "prefixes for keys in the dataset are 'train', "
-                       "'valid' and 'test'".format(key))
+        for dset in [train_dataset, valid_dataset, test_dataset]:
+          dset[key] = dataset[key]
+          common_keys.append(key)
     
+    if train_dataset: train_dataset = self.add_dummies_to_dataset(train_dataset)
+    if valid_dataset: valid_dataset = self.add_dummies_to_dataset(valid_dataset)
+    if test_dataset: test_dataset = self.add_dummies_to_dataset(test_dataset)
+
     return {'train' : train_dataset,
             'valid' : valid_dataset, 
             'test' : test_dataset}
     
   def batch_iterator_from_dataset(self, dataset, shuffle=True):
     """
+    Define a batch iterator from a dataset
+    
+    Args:
+      dataset (dict) : A dict whose keys are the names of InputNodes and whose
+          values are the data to be fed to them.
+      
+      shuffle (bool) : Should the data be shuffled?
     """
     nsamps = len(list(dataset.values())[0])
     l_inds = np.arange(nsamps)
@@ -143,15 +210,32 @@ class Model(abc.ABC):
       yield {key : value[l_inds[idx:idx+self.batch_size]] for key, value
              in dataset.items()}
 
+  @abstractmethod
+  def build(self):
+    """
+    Build the Model from a Builder object. Must be implemented
+    """
+    raise NotImplementedError("")
+        
+  @abstractmethod
+  def train(self, dataset, num_epochs):
+    """
+    Train the Model. Must be implemented
+    """
+    raise NotImplementedError("")
+
   def reduce_op_from_batches(self,
-                             sess,
                              op,
                              dataset,
                              reduction='mean',
                              num_batches=100):
     """
     Reduce op from batches
+    
+    Args:
+        sess (tf.Session) :
     """
+    sess = self.sess
     if self.batch_size is None:
       return sess.run(op, feed_dict=dataset)
     else:
@@ -165,6 +249,8 @@ class Model(abc.ABC):
           
   def sample(self, input_data, node, islot=0):
     """
+    Deprecated (use model.eval() instead)
+    
     Sample from the model graph. For user provided features generates a
     response.
     """
@@ -205,40 +291,44 @@ class Model(abc.ABC):
     prefixes = [file[:-5] for file in os.listdir(rslt_dir) if 'meta'==file.split('.')[-1]]
     return max([f for f in prefixes], key=lambda f : int(f.split('-')[-1])) + '.meta'
 
-  def _restore(self, metafile=None):
+  def restore(self, metafile=None):
     """
     Restore a saved model 
     """
-    rslt_dir = self.rslt_dir
+    rslt_dir = self.rslts_dir
     if metafile is None:
       metafile = self.get_latest_metafile_in_rslt_dir(rslt_dir)
       print("... from metafile {}".format(metafile))
+
       saver = tf.train.import_meta_graph(rslt_dir+metafile)
     else:
-      saver = tf.train.import_meta_graph(rslt_dir+metafile)
+      print("... from metafile {}".format(metafile))
     
+      saver = tf.train.import_meta_graph(rslt_dir+metafile)
     saver.restore(self.sess, tf.train.latest_checkpoint(rslt_dir))
-    self.sess.run(tf.global_variables_initializer())
 
   def save_otensor_names(self):
     """
-    Store a user friendly hash to whose values are the names of the output
-    tensors of every node
+    Pickle user friendly hashes with extra information about the neurolib model
+    graph.
     """
-    rslt_dir = self.trainer.rslt_dir
-    with open(rslt_dir + 'output_names', 'wb') as f1:
+    rslts_dir = self.trainer.rslts_dir
+    with open(rslts_dir + 'output_names', 'wb') as f1:
       print("self.builder.otensor_names", self.builder.otensor_names)
       pickle.dump(self.otensor_names, f1)
+    with open(rslts_dir + 'dummies', 'wb') as f2:
+      print("self.builder.dummies", self.builder.dummies)
+      pickle.dump(self.builder.dummies, f2)
     
     return self.otensor_names
 
   def eval(self, names, dataset, key=None):
     """
-    Evaluate an op given an input dataset.
+    Evaluate a tensor given an input dataset.
     """
     sess = self.sess
     if isinstance(names, str): names = [names]
-    opnames = [self.ops_names[name] for name in names]
+    opnames = [self.otensor_names[name] for name in names]
     
     if key is None:
       fd = self.prepare_dataset(dataset)
@@ -247,3 +337,4 @@ class Model(abc.ABC):
       fd = dataset_dict[key]
     
     return sess.run(opnames, feed_dict=fd)
+  

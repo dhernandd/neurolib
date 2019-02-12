@@ -64,7 +64,6 @@ class EvolutionSequenceTest(tf.test.TestCase):
     max_steps = 25
     dataset = generate_echo_data(1000, 3, max_steps)
     Y = dataset['train_outputSeq']
-    Y2 = np.tile(Y, (1, 1, 2))
     
     idims = [[1]]
     builder = SequentialBuilder(scope='Test',
@@ -75,22 +74,8 @@ class EvolutionSequenceTest(tf.test.TestCase):
                                         ev_seq_class=NonlinearDynamicswGaussianNoise,
                                         num_inputs=2,
                                         name='EvSeq')
-    os1 = builder.addOutputSequence()
     builder.addDirectedLink(is1, evs1, islot=1)
-    builder.addDirectedLink(evs1, os1)
-     
-    Z = tf.placeholder(tf.float64, [None, 25, 2], name='Z')
- 
     builder.build()
-    evnode = builder.nodes[evs1]
-    entropy = evnode.entropy()
-    log_prob = evnode.log_prob(Z)
-    print(builder.dummies)
-      
-    lp = builder.eval(log_prob, feed_dict={'Test/inputSeq:0' : Y,
-                                           'Z:0' : Y2})
-    e = builder.eval(entropy, feed_dict={'Test/inputSeq:0' : Y})
-    print('entropy, logprob', np.sum(lp), np.sum(e))
     
 if __name__ == "__main__":
   unittest.main(failfast=True)

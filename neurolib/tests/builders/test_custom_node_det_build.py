@@ -20,10 +20,9 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 3
+# NUM_TESTS : 4
 run_from = 0
-run_to = 3
-run_up_to_test = 3
+run_to = 4
 tests_to_run = list(range(run_from, run_to))
 
 class CustomEncoderBuilderBasicTest(tf.test.TestCase):
@@ -48,7 +47,7 @@ class CustomEncoderBuilderBasicTest(tf.test.TestCase):
     """
     Test commit
     """
-    print("\nTest 1: Committing")
+    print("\nTest 1: Adding nodes to custom")
     builder = StaticBuilder("MyModel")
 
     builder.addInput(10)
@@ -57,15 +56,35 @@ class CustomEncoderBuilderBasicTest(tf.test.TestCase):
                                     name="Custom")
     cust_in1 = cust.addInner(3)
     cust_in2 = cust.addInner(4)
-    cust.addDirectedLink(cust_in1, cust_in2)
+    cust.addDirectedLink(cust_in1, cust_in2, islot=0)
 
     cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareOslot(oslot=0, innernode_name=cust_in2, inode_oslot=0)
-    cust.commit()
-    
-    builder.addOutput()
-      
+    cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
+
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
+  def test_build_outputs(self):
+    """
+    Test commit
+    """
+    print("\nTest 1: Building outputs")
+    builder = StaticBuilder("MyModel")
+
+    builder.addInput(10)
+    cust = builder.createCustomNode(num_inputs=1,
+                                    num_outputs=1,
+                                    name="Custom")
+    cust_in1 = cust.addInner(3)
+    cust_in2 = cust.addInner(4)
+    cust.addDirectedLink(cust_in1, cust_in2, islot=0)
+
+    cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
+    cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
+    
+    ipt = [{'main' : tf.placeholder(tf.float64, [1, 3])}]
+    rslt = cust.get_outputs(ipt)
+    print("rslt", rslt)
+      
+  @unittest.skipIf(3 not in tests_to_run, "Skipping")
   def test_add_encoder1(self):
     """
     Test build
@@ -78,18 +97,15 @@ class CustomEncoderBuilderBasicTest(tf.test.TestCase):
                                     name="Custom")
     cust_in1 = cust.addInner(3)
     cust_in2 = cust.addInner(4)
-    cust.addDirectedLink(cust_in1, cust_in2)
+    cust.addDirectedLink(cust_in1, cust_in2, islot=0)
 
     cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareOslot(oslot=0, innernode_name=cust_in2, inode_oslot=0)
-    cust.commit()
+    cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
      
     in1 = builder.addInput(10)
-    o1 = builder.addOutput()
-    builder.addDirectedLink(in1, cust)
-    builder.addDirectedLink(cust, o1)
-     
+    builder.addDirectedLink(in1, cust, islot=0)     
     builder.build()
+    
     
 if __name__ == "__main__":
   unittest.main(failfast=True)

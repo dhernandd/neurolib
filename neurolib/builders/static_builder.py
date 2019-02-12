@@ -15,27 +15,312 @@
 # ==============================================================================
 import numpy as np
 import tensorflow as tf
+from collections import defaultdict
 
-from neurolib.builders.builder import Builder
+from bidict import bidict
+
 from neurolib.encoder.deterministic import DeterministicNNNode
 from neurolib.encoder.anode import ANode
 from neurolib.encoder.custom import CustomNode
 from neurolib.encoder.input import PlaceholderInputNode  # @UnusedImport
 from neurolib.encoder.output import OutputNode
 from neurolib.utils.utils import check_name
-from neurolib.encoder.basic import CopyNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
+class Builder():
+  """
+  Abstract class for model builders
+  """
+  innernode_dict = {'deterministic' : DeterministicNNNode}
+  def __init__(self,
+               scope,
+               batch_size=None):
+    """
+    Initialize the StaticBuilder
+    
+    Args:
+      scope (str): The tensorflow scope of the Model to be built
+      
+      batch_size (int or None): The batch size. Defaults to None (unspecified)
+    """
+    self.scope = scope
+    self.batch_size = batch_size
+    self.num_nodes = 0
+    
+    # graph representation
+    self.custom_encoders = {}
+    self.adj_matrix = []
+    self.adj_list = []
+    self.num_subbuilders = 0
+    
+    # name to node dicts
+    self.nodes = {}
+    self.input_nodes = {}
+    self._label_to_node = {}
+
+    # for restoring a model
+    self.otensor_names = {}
+        
+  def add_node_to_model_graph(self):
+    """
+    Add node to the graph representations (adjacency list and adjacency matrix)
+    """
+    def add_node_adj_matrix():
+      l = len(self.adj_matrix)
+      for row in range(l):
+        self.adj_matrix[row].extend([0])
+      self.adj_matrix.append([0]*(l+1))
+    def add_node_adj_list():
+      self.adj_list.append([])  
+    
+    add_node_adj_matrix()
+    add_node_adj_list()
+  
+  @check_name
+  def addExternalNode(self,
+                      node,
+                      name=None):
+    """
+    """
+    self.add_node_to_model_graph()
+    
+    self.ext_builder[name] = node
+    self._label_to_node[self.num_labels] = node
+    self.num_labels += 1
+    
+    return name
+  
+  @check_name
+  def addInput(self,
+               state_size,
+               iclass=PlaceholderInputNode,
+               is_sequence=False,
+               name=None,
+               **dirs):
+    """
+    Add an InputNode to the Encoder Graph
+    
+    Args:
+      state_size (int): An integer specifying the dimension of the output
+      
+      iclass (InputNode or str): class of the node
+
+      is_sequence (bool) : Is this node a sequence?
+      
+      name (str): Unique identifier for the Input Node
+      
+      dirs (dict): A dictionary of directives for the node
+    """
+    self.add_node_to_model_graph()
+    
+    in_node = iclass(self,
+                     state_size,
+                     is_sequence=is_sequence,
+                     name=name,
+                     **dirs)
+    name = in_node.name
+    self.input_nodes[name] = self.nodes[name] = in_node 
+    self._label_to_node[in_node.label] = in_node
+    
+    return name
+    
+  @check_name
+  def addInner(self,
+               state_sizes,
+               num_inputs=1,
+               node_class=DeterministicNNNode,
+               is_sequence=False,
+               name=None,
+               **dirs):
+    """
+    Add an InnerNode to the Encoder Graph
+    
+    Args:
+      state_sizes (int or list of list of int) : For a single output, the
+          dimension of the output. For more than one output, a list of list of
+          ints where `state_sizes[ot]` are the dimensions of the output
+          corresponding to the oslot `ot`.
+      
+      num_inputs (int) : The number of inputs to this node.
+      
+      node_class (InnerNode or str): class of the node
+      
+      is_sequence (bool) : Does this node represent a sequence?
+      
+      name (str): A unique string identifier for the node being added to the MG
+      
+      dirs (dict): A dictionary of directives for the node
+    """
+    if num_inputs < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_inputs))
+    
+    self.add_node_to_model_graph()
+    
+    if isinstance(node_class, str):
+      node_class = self.innernode_dict[node_class]
+    enc_node = node_class(self,
+                          state_sizes,
+                          num_inputs=num_inputs,
+                          is_sequence=is_sequence,
+                          name=name,
+                          **dirs)
+      
+    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+      
+    return enc_node.name
+  
+  @check_name
+  def addOutput(self,
+                name=None,
+                name_prefix=None,
+                is_sequence=False):
+    """
+    Add an OutputNode to the Encoder Graph
+    
+    Args:
+      name (str): Unique identifier for the Output Node
+    """
+    self.add_node_to_model_graph()
+    
+    out_node = OutputNode(self,
+                          name=name,
+                          name_prefix=name_prefix,
+                          is_sequence=is_sequence)
+    name = out_node.name
+    self.output_nodes[name] = self.nodes[name] = out_node 
+    self._label_to_node[out_node.label] = out_node
+    
+    return name
+
+  def addMergeNode(self,
+                   node_list=None,
+                   node_dict=None,
+                   parents_to_oslot_tuples=None,
+                   merge_class=None,
+                   name=None,
+                   **dirs):
+    """
+    Merge two or more nodes
+    """
+    self.add_node_to_model_graph()
+    
+    merger = merge_class(self,
+                         node_list=node_list,
+                         node_dict=node_dict,
+                         parents_to_oslot_tuples=parents_to_oslot_tuples,
+                         name=name,
+                         **dirs)
+    name = merger.name
+    self.nodes[name] = merger
+    self._label_to_node[merger.label] = merger
+    
+    return name
+  
+  def addDirectedLink(self, node1, node2, islot):
+    """
+    Add directed links to the Model Graph
+    """
+    if isinstance(node1, str):
+      node1 = self.nodes[node1]
+    if isinstance(node2, str):
+      node2 = self.nodes[node2]
+    if not (isinstance(node1, ANode) and isinstance(node2, ANode)):
+      raise TypeError("Args node1 and node2 must be either of type `str` "
+                      "or type `ANode`")
+      
+    if islot > node2.num_expected_inputs - 1:
+      raise ValueError("`islot` {} out of range (`num_expected_inputs = {})"
+                       "".format(islot, node2.num_expected_inputs))
+    if islot not in node2.free_islots:
+      raise ValueError("`islot` {} has already been assigned.".format(islot))
+      
+    self.adj_matrix[node1.label][node2.label] = 1
+    if node2.label not in self.adj_list[node1.label]: 
+      self.adj_list[node1.label].append(node2.label)
+      
+    for oname in node1.oslot_names:
+      node1._child_label_to_slot_pairs[node2.label].append((oname, islot))
+    
+    node2.free_islots.remove(islot)
+
+    # Initialize _built_parents for the child node.
+    node2._built_parents[node1.label] = False
+    
+    # cleanup
+    node1.update_when_linked_as_node1()
+    node2.update_when_linked_as_node2()
+  
+  def createCustomNode(self,
+                       num_inputs,
+                       num_outputs,
+                       is_sequence=False,
+                       name=None,
+                       **dirs):
+    """
+    Create a CustomNode
+    """
+    self.add_node_to_model_graph()
+    
+    # Define here to avoid circular imports
+    custom_builder = CustomNodeBuilder(scope=name,
+                                       batch_size=self.batch_size,
+                                       dummy_bsz=self.dummy_bsz)
+    cust = CustomNode(self,
+                      custom_builder,
+                      num_inputs,
+                      num_outputs,
+                      is_sequence=is_sequence,
+                      name=name,
+                      **dirs)
+    name = cust.name
+    self.custom_encoders[name] = self.nodes[name] = cust
+    self._label_to_node[cust.label] = cust
+    
+    return cust
+  
+  def make_dummy_fd(self, batch_size):
+    """
+    Make the feed dict for the dummies (batch size, for instance) of the Model 
+    """
+    return {self.dummies[key] : np.array([batch_size], dtype=np.int32) for key 
+            in self.dummies}
+  
+  def check_graph_correctness(self):
+    """
+    Checks the graph declared so far. 
+    
+    TODO:
+    """
+    pass
+        
+  def get_custom_encoder(self, name):
+    """
+    Get a CustomNode by name
+    """
+    return self.custom_encoders[name] 
+
+  def get_label_from_name(self, name):
+    """
+    Get the label of a node from name
+    """
+    return self.nodes[name].label
+  
+  def add_to_output_names(self, name, tensor):
+    """
+    Add a tensor to the list of names available on restore
+    """
+    self.otensor_names[name] = tensor.name
+    
+  
 class StaticBuilder(Builder):
   """
-  A StaticBuilder is a Builder for statistical models or nodes that do not
-  involve sequential data. In particular, models of time series cannot be built
-  using a StaticBuilder.
+  A Builder for statistical models that do not involve sequential data.
   
-  Building of a static Model through a StaticBuilder is done in two stages:
+  A static Model is built through a StaticBuilder in two stages:
   Declaration and Construction. In the Declaration stage, the input, output and
-  inner nodes of the Model are 'added' to the Model graph (MG), and directed
+  inner nodes of the Model are "added" to the Model graph (MG), and directed
   links - representing the flow of tensors - are defined between them. In the
   Construction stage, a BFS-like algorithm is called that generates a tensorflow
   graph out of the MG specification
@@ -66,426 +351,61 @@ class StaticBuilder(Builder):
       builder.build()
     
     The 2 input nodes define placeholders for the features and response data
-  
   """
-  def __init__(self,
-               scope,
-               batch_size=None):
+  def __init__(self, scope, batch_size=None):
     """
     Initialize the StaticBuilder
-    
-    Args:
-      scope (str): The tensorflow scope of the Model to be built
-      
-      batch_size (int or None): The batch size. Defaults to None (unspecified)
     """
-    self.custom_encoders = {}
+    super(StaticBuilder, self).__init__(scope, batch_size)
+
+    # dummies
     self.dummies = {}
-    self.adj_matrix = None
-    self.adj_list = None
-
-    super(StaticBuilder, self).__init__(scope,
-                                        batch_size=batch_size)
-              
-  @check_name
-  def addInput(self,
-               state_size,
-               iclass=PlaceholderInputNode,
-               is_sequence=False,
-               name=None,
-               **dirs):
-    """
-    Add an InputNode to the Encoder Graph
-    
-    Args:
-      state_size (int): An integer specifying the dimension of the output
-      
-      iclass (InputNode or str): class of the node
-
-      is_sequence (bool) : Is this node a sequence?
-      
-      name (str): Unique identifier for the Input Node
-      
-      dirs (dict): A dictionary of directives for the node
-    """
-    in_node = iclass(self,
-                     state_size,
-                     is_sequence=is_sequence,
-                     name=name,
-                     **dirs)
-    name = in_node.name
-    self.input_nodes[name] = self.nodes[name] = in_node 
-    self._label_to_node[in_node.label] = in_node
-    
-    return name
-    
-  @check_name
-  def addOutput(self,
-                name=None,
-                name_prefix=None,
-                is_sequence=False):
-    """
-    Add an OutputNode to the Encoder Graph
-    
-    Args:
-      name (str): Unique identifier for the Output Node
-    """
-    out_node = OutputNode(self,
-                          name=name,
-                          name_prefix=name_prefix,
-                          is_sequence=is_sequence)
-    name = out_node.name
-    self.output_nodes[name] = self.nodes[name] = out_node 
-    self._label_to_node[out_node.label] = out_node
-    
-    return name
+    if self.batch_size is None:
+      self.dummy_bsz = tf.placeholder(tf.int32, [None], 'dummy_bsz')
+      self.dummies['dummy_bsz'] = self.dummy_bsz.name
   
-  @check_name
-  def addCopyNode(self, name=None):
+  def build(self,
+             scope_suffix=None):
     """
-    Add a Copy Node
     """
-    c_node = CopyNode(self,
-                      name=name)
-    name = c_node.name
-    self.nodes[name] = c_node
-    self._label_to_node[c_node.label] = c_node
-    
-    return name
-    
-  def addDirectedLink(self, node1, node2, oslot=0, islot=0, name=None):
-    """
-    Add directed links to the Encoder graph. 
-    
-    A) Deal with different item types. The client may provide as arguments,
-    either EncoderNodes or integers. Get the EncoderNodes in the latter case
- 
-    B) Check that the provided oslot for node1 is free. Otherwise, raise an
-    exception.
-    
-    C) Initialize/Add dimensions to the graph representations stored in the
-    builder. Specifically, the first time a DirectedLink is added an adjacency
-    matrix and an adjacency list are created. From then on, the appropriate
-    number of dimensions are added to these representations.
-
-    D) Update the representations to represent the new link. 
-    
-    E) Fill the all important dictionaries _child_to_oslot and _parent_to_islot.
-    For node._child_to_oslot[key] = value, key represents the labels of the
-    children of node, while the values are the indices of the oslot in node
-    that outputs to that child. Analogously, in node._parent_to_islot[key] =
-    value, the keys are the labels of the parents of node and the values are the
-    input slots in node corresponding to each key.
-    
-    F) Possibly update the attributes of node2. In particular deal with nodes
-    whose output shapes are dynamically inferred. This is important for nodes such
-    as CloneNode and ConcatNode whose output shapes are not provided at
-    creation. Once these nodes gather their inputs, they can infer their
-    output_shape at this stage.
-    
-    Args:
-      node1 (ANode or str): Node from which the edge emanates
-      
-      node2 (ANode or str): Node to which the edge arrives
-       
-      oslot (int): Output slot in node1
-      
-      islot (int): Input slot in node2
-    """
-    # A
-    if isinstance(node1, str):
-      node1 = self.nodes[node1]
-    if isinstance(node2, str):
-      node2 = self.nodes[node2]
-    if not (isinstance(node1, ANode) and isinstance(node2, ANode)):
-      raise TypeError("Args node1 and node2 must be either of type `str` "
-                      "or type `ANode`")
-    
-    # B
-    nnodes = self.num_nodes
-    if not node1._oslot_to_shape:
-      if isinstance(node1, OutputNode):
-        raise ValueError("Outgoing directed links cannot be defined for "
-                         "OutputNodes")
-      else:
-        raise ValueError("Node1 appears to have no outputs. This software has "
-                         "no clue why that would be.\n Please report to my "
-                         "master.")
-    elif oslot not in node1._oslot_to_shape:
-      print("oslot, node1._oslot_to_shape:", oslot, node1._oslot_to_shape)
-      raise KeyError("The requested oslot has not been found. Inferring this "
-                     "oslot shape may require knowledge of the shape of its "
-                     "inputs. In that case, all the inputs for this node must "
-                     "be declared")
-    if islot in node2._islot_to_shape:
-      raise AttributeError("That input slot is already occupied. Assign to "
-                           "a different islot")
-
-    # C
-    print('Adding dlink:', node1.name, ' -> ', node2.name)
-    if self.adj_matrix is None:
-      self.adj_matrix = [[0]*nnodes for _ in range(nnodes)]
-      self.adj_list = [[] for _ in range(nnodes)]
-    else:
-      if nnodes > len(self.adj_matrix):
-        l = len(self.adj_matrix)
-        for row in range(l):
-          self.adj_matrix[row].extend([0]*(nnodes-l))
-        for _ in range(nnodes-l):
-          self.adj_matrix.append([0]*nnodes)
-          self.adj_list.append([])
-    
-    # D
-    self.adj_matrix[node1.label][node2.label] = 1
-    if node2.label not in self.adj_list[node1.label]: 
-      self.adj_list[node1.label].append(node2.label)
-      
-    # E
-    if node1.num_expected_outputs > 1:
-      if oslot is None:
-        raise ValueError("The in-node has more than one output slot, so pairing "
-                         "to the out-node is ambiguous.\n You must specify the "
-                         "output slot. The declared output slots for node 1 are: ",
-                         node1._oslot_to_shape)
-    if node2.num_expected_inputs > 1:
-      if islot is None:
-        raise ValueError("The out-node has more than one input slot, so pairing "
-                         "from the in-node is ambiguous.\n You must specify the " 
-                         "input slot")
-    exchanged_shape = node1._oslot_to_shape[oslot]
-#     node1._child_label_to_slot_pairs[node2.label] = oslot
-    node1._child_label_to_slot_pairs[node2.label].append((oslot, islot))
-
-    if oslot in node1.free_oslots:
-      node1.num_declared_outputs += 1
-      node1.free_oslots.remove(oslot)
-    
-    node2._islot_to_shape[islot] = exchanged_shape
-#     node2._parent_label_to_islot[node1.label] = islot
-    node2._parent_label_to_islot[node1.label].append(islot)
-    node2.num_declared_inputs += 1
-    node2.free_islots.remove(islot)
-#     print("stb; node1.oslot_to_name", node1.oslot_to_name, node1.name)
-#     node2.islot_to_name[islot] = (node1.oslot_to_name[oslot] if name is None
-#                                    else name)
-
-    # Initialize _built_parents for the child node.
-    node2._built_parents[node1.label] = False
-    
-    # F
-    node1.update_when_linked_as_node1()
-    node2.update_when_linked_as_node2()
-      
-  def addMergeNode(self,
-                   state_size,
-                   node_list=None,
-                   node_dict=None,
-                   parents_to_oslot_tuples=None,
-                   merge_class=None,
-                   name=None,
-                   **dirs):
-    """
-    Merge two or more nodes
-    """
-    merger = merge_class(self,
-                         state_size,
-                         node_list=node_list,
-                         node_dict=node_dict,
-                         parents_to_oslot_tuples=parents_to_oslot_tuples,
-                         name=name,
-                         **dirs)
-    name = merger.name
-    self.nodes[name] = merger
-    self._label_to_node[merger.label] = merger
-    
-    return name
-  
-  def check_graph_correctness(self):
-    """
-    Checks the graph declared so far. 
-    
-    TODO:
-    """
-    pass
-        
-  def createCustomNode(self,
-                       num_inputs,
-                       num_outputs,
-                       is_sequence=False,
-                       name=None):
-    """
-    Create a CustomNode
-    """
-    # Define here to avoid circular dependencies
-    custom_builder = StaticBuilder(scope=name,
-                                   batch_size=self.batch_size)
-    cust = CustomNode(self,
-                      custom_builder,
-                      num_inputs,
-                      num_outputs,
-                      is_sequence=is_sequence,
-                      name=name)
-    name = cust.name
-    self.custom_encoders[name] = self.nodes[name] = cust
-    self._label_to_node[cust.label] = cust
-    
-    return cust
-  
-  def get_custom_encoder(self, name):
-    """
-    Get a CustomNode by name
-    """
-    return self.custom_encoders[name] 
-  
-  def add_to_custom(self,
-                    custom_node,
-                    output_shapes,
-                    name=None,
-                    node_class=DeterministicNNNode,
-                    **dirs):
-    """
-    Add an InnerNode to a CustomNode
-    """
-    custom_node.builder.addInner(output_shapes,
-                                 name=name,
-                                 node_class=node_class,
-                                 **dirs)
-
-  def get_label_from_name(self, name):
-    """
-    Get the label of a node from name
-    """
-    return self.nodes[name].label
-  
-  def build_output(self,
-                 inputs=None,
-                 islot_to_itensor=None,
-                 custom_node=None,
-                 scope_suffix=None):
-    """
-    Get the output for this node from a set of inputs.
-    
-    This method follows the directed links in the Model Graph (MG) in BFS
-    fashion to construct the tensorflow graph. The method behaves slightly
-    different for the case in which self is the inside Builder of a CustomNode.
-    In that case, the method must allows for sampling from the CustomNode. These
-    two cases may be different enough that they may need to be implemented
-    separately in a future version.
-    
-    The algorithm goes through the following stages:
-    
-    A. If custom_node is provided:
-      A.1. Loop over the islots of inode and get the corresponding islots
-          of the parent custom_node.
-      A.2. Assign the inputs to custom_node._islot_to_itensor
-
-    * For inode in self.input_nodes:
-        B. Add inode to the queue
-        
-      * Start main BFS loop:
-          B. Pop node from the queue. Set visited[node.label] to True
-
-          D. Build the popped node 
-            
-          * For child_node in node's children:
-              E. Set node in child_node._buils_parents to True
-              F. Get the endslots of the parent and child
-              G. Fill the inputs of the child node
-                G.1. If child_node is a CustomNode, also match the input of the
-                    islot with the input of the inner_islot
-              H. Append to the queue if all parents of child_node have been built
-        
-          I. If custom_node is provided and node is an OutputNode
-            I.1. Loop over oslots of node and get the corresponding oslots and
-                otensors of custom_node. Build the dictionary of results
-    """      
-    result = None
-    # I THINK THAT IN THIS METHOD ONLY INPUT DICTS SHOULD BE ALLOWED
-    if custom_node is not None:
-      try:
-        _input = dict(list(enumerate(inputs)))
-      except TypeError:
-        _input = islot_to_itensor
-#       if not isinstance(inputs, dict):
-      result = {}
-
     scope_suffix = "" if scope_suffix is None else "_" + scope_suffix
-    with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE): 
-      # A.
-      if custom_node is not None:
-        for islot, inner_node_data in custom_node._islot_to_inner_node_islot.items():
-          for inode_name, inode_islot in inner_node_data:
-            self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
-          
-
+    with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE):
+      # init BFS
       visited = [False for _ in range(self.num_nodes)]
       queue = []
+      
+      # start at every input node
       for cur_inode_name in self.input_nodes:
-        # B.
         cur_inode_label = self.get_label_from_name(cur_inode_name)
         queue.append(cur_inode_label)
         while queue:
-          # C.
           cur_node_label = queue.pop(0)
-          visited[cur_node_label] = True
           cur_node = self._label_to_node[cur_node_label]
-
-          # D.
-          cur_node._build()
           
+          # Build the current node
+          cur_node._build()
+          visited[cur_node_label] = True
+
           # Update the oslots of the children of cur_node
           for child_label in self.adj_list[cur_node_label]:
-            # E.
             child_node = self._label_to_node[child_label]
+            
+            # A parent of this child has been built
             child_node._built_parents[cur_node_label] = True
             
-            # F.
-            for oslot, islot in cur_node._child_label_to_slot_pairs[child_label]:
-              child_node._islot_to_itensor[islot] = cur_node.get_output(oslot)
-
-              if isinstance(child_node, CustomNode):
-                for enc_name, enc_islot in child_node._islot_to_inner_node_islot[islot]:
-                  enc = child_node.in_builder.nodes[enc_name]
-  #                 enc._islot_to_itensor[enc_islot] = cur_node.get_outputs()[oslot]
-#                   enc._islot_to_itensor[enc_islot] = cur_node.build_output(oslot)
-                  enc._islot_to_itensor[enc_islot] = child_node._islot_to_itensor[islot]
+            # assign cur_node output tensor to a child islot...
+            for oname, islot in cur_node._child_label_to_slot_pairs[child_label]:
+              child_node._islot_to_itensor[islot][oname] = cur_node.get_output_tensor(oname)
             
-            # H.
-            if isinstance(child_node, OutputNode):
-              queue.append(child_node.label)
-              continue
+            # once all parents of a child have been built, add to bfs queue
             if all(child_node._built_parents.values()):
               queue.append(child_node.label)
-          
-          # I.
-          if custom_node is not None and cur_node.name in self.output_nodes:
-            for onode_oslot in cur_node._oslot_to_otensor:
-              custom_node_oslot = custom_node._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
-              result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
-              
-      if custom_node is not None:
-#         print("result.items()", result.items())
-        result_as_list = list(zip(*sorted(result.items())))[1]
-      else:
-        result_as_list = None
-      
-    return result_as_list, result
 
-  def build(self):
+  def get_node_output(self, node_name, oslot='main'):
     """
+    Get output tensor
     """
-    self.build_output()
-    
-  def make_dummy_fd(self, batch_size):
-    """
-    """
-    return {key : np.array([batch_size], dtype=np.int32) for key in self.dummies}
-#     return {key : np.zeros([batch_size] + value[1:]) for key, value in self.dummies.items()}
-  
-  def get_node_output(self, node_name, oslot=0):
-    """
-    """
-    return self.nodes[node_name].get_output(oslot)
+    return self.nodes[node_name].get_output_tensor(oslot)
   
   def eval(self, otensor, feed_dict=None, lmbda=None):
     """
@@ -493,28 +413,196 @@ class StaticBuilder(Builder):
     """
     if feed_dict is None:
       feed_dict = {}
-      batch_size = 2
+      batch_size = 1
     else:
       batch_size = list(feed_dict.values())[0].shape[0]
     dummy_feed = self.make_dummy_fd(batch_size)
-    print("dummy_feed", dummy_feed)
-#     assert False
     feed_dict.update(dummy_feed)
+    print("feed_dict", feed_dict)
 
     sess = tf.Session(graph=tf.get_default_graph())
-#     sess.run(tf.global_variables_initializer(), feed_dict=feed_dict)
     sess.run(tf.global_variables_initializer())
     if lmbda is not None:
       rslt = sess.run(lmbda(otensor), feed_dict=feed_dict)
     else:
-      print("otensor", otensor)
       rslt = sess.run(otensor, feed_dict=feed_dict)
     return rslt
   
-  def eval_output(self, node, oslot=0, feed_dict=None, lmbda=None):
+  def eval_node_oslot(self, node, oslot='main', feed_dict=None, lmbda=None):
     """
     Evaluate the output tensor of a node
     """
-    otensor = self.nodes[node].get_output(oslot)
-    
+    otensor = self.nodes[node].get_output_tensor(oslot)
     return self.eval(otensor, feed_dict=feed_dict, lmbda=lmbda)
+  
+  
+class CustomNodeBuilder(StaticBuilder):
+  """
+  A builder for building CustomNodes
+  """
+  def __init__(self,
+               scope,
+               batch_size=None,
+               dummy_bsz=None):
+    """
+    Initialize the CustomNodeBuilder
+    """
+    super(CustomNodeBuilder, self).__init__(scope,
+                                            batch_size)
+    
+    # dummies
+    self.dummies = {}
+    if dummy_bsz is None:
+      if self.batch_size is None:
+        self.dummy_bsz = tf.placeholder(tf.int32, [None], 'dummy_bsz')
+    else:
+      self.dummy_bsz = dummy_bsz
+    self.dummies['dummy_bsz'] = self.dummy_bsz.name
+    
+    # dicts for access and talking to the outer nodes
+    self.output_nodes = {}
+    self._innernode_to_its_avlble_islots = {}
+    self._innernode_to_its_avlble_oslots = {}
+    self._islot_to_inner_node_islot = defaultdict(list)
+    self._oslot_to_inner_node_oslot = bidict()
+    
+  @check_name
+  def addInner(self,
+               state_sizes,
+               num_inputs=1,
+               node_class=DeterministicNNNode,
+               is_sequence=False,
+               name=None,
+               **dirs):
+    """
+    Add an InnerNode to the Encoder Graph
+    
+    Args:
+      state_sizes (int or list of list of int) : For a single output, the
+          dimension of the output. For more than one output, a list of list of
+          ints where `state_sizes[ot]` are the dimensions of the output
+          corresponding to the oslot `ot`.
+      
+      num_inputs (int) : The number of inputs to this node.
+      
+      node_class (InnerNode or str): class of the node
+      
+      is_sequence (bool) : Does this node represent a sequence?
+      
+      name (str): A unique string identifier for the node being added to the MG
+      
+      dirs (dict): A dictionary of directives for the node
+    """
+    if num_inputs < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_inputs))
+    
+    self.add_node_to_model_graph()
+    
+    if isinstance(node_class, str):
+      node_class = self.innernode_dict[node_class]
+    enc_node = node_class(self,
+                          state_sizes,
+                          num_inputs=num_inputs,
+                          is_sequence=is_sequence,
+                          name=name,
+                          **dirs)
+    self.input_nodes[enc_node.name] = enc_node
+    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+      
+    return enc_node.name
+
+  def addDirectedLink(self, node1, node2, islot):
+    """
+    Add directed links to the Model Graph
+    """
+    if isinstance(node1, str):
+      node1 = self.nodes[node1]
+    if isinstance(node2, str):
+      node2 = self.nodes[node2]
+    if not (isinstance(node1, ANode) and isinstance(node2, ANode)):
+      raise TypeError("Args node1 and node2 must be either of type `str` "
+                      "or type `ANode`")
+      
+    if islot > node2.num_expected_inputs - 1:
+      raise ValueError("`islot` {} out of range (`num_expected_inputs = {})"
+                       "".format(islot, node2.num_expected_inputs))
+    if islot not in node2.free_islots:
+      raise ValueError("`islot` {} has already been assigned.".format(islot))
+      
+    self.adj_matrix[node1.label][node2.label] = 1
+    if node2.label not in self.adj_list[node1.label]: 
+      self.adj_list[node1.label].append(node2.label)
+      
+    for oname in node1.oslot_names:
+      node1._child_label_to_slot_pairs[node2.label].append((oname, islot))
+    
+    node2.free_islots.remove(islot)
+
+    # Initialize _built_parents for the child node.
+    node2._built_parents[node1.label] = False
+    
+    # Remove node2 from input_nodes
+    self.input_nodes.pop(node2.name)
+    
+    # cleanup
+    node1.update_when_linked_as_node1()
+    node2.update_when_linked_as_node2()
+    
+  def build_outputs(self,
+                    islot_to_itensor,
+                    output_names):
+    """
+    Build outputs for the associated Custom Node 
+    """
+    print("\ncust_builder; self.input_nodes", self.input_nodes)
+    
+    result = {}
+    _input = islot_to_itensor
+    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
+      # fill the inner nodes islot_to_itensors with the input 
+      for islot in self._islot_to_inner_node_islot:
+        inner_node_data = self._islot_to_inner_node_islot[islot]
+        for inode_name, inode_islot in inner_node_data:
+          print("inode_name, inode_islot", inode_name, inode_islot)
+          print("_input", _input)
+          self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
+
+      # init bfs
+      visited = [False for _ in range(self.num_nodes)]
+      queue = []
+      for cur_inode_name in self.input_nodes:
+        cur_inode_label = self.get_label_from_name(cur_inode_name)
+        queue.append(cur_inode_label)
+        while queue:
+          cur_node_label = queue.pop(0)
+          visited[cur_node_label] = True
+          cur_node = self._label_to_node[cur_node_label]
+          
+          # build current inner node
+          print("sb; cur_node._islot_to_itensor", cur_node.name, cur_node._islot_to_itensor)
+          cur_node._build()
+          print("sb; cur_node._oslot_to_otensor", cur_node.name, cur_node._oslot_to_otensor)
+          
+          # fetch children 
+          for child_label in self.adj_list[cur_node_label]:
+            # mark current node as visited for its children
+            child_node = self._label_to_node[child_label]
+            child_node._built_parents[cur_node_label] = True
+            
+            # fill child `_islot_to_itensor` attribute
+            for oslot, islot in cur_node._child_label_to_slot_pairs[child_label]:
+              child_node._islot_to_itensor[islot][oslot] = cur_node.get_output_tensor(oslot)
+
+            # if all its parents are built, add to bfs queue
+            if all(child_node._built_parents.values()):
+              queue.append(child_node.label)
+          
+          # fill result with the inner node `_oslot_to_otensor` attribute 
+          if cur_node.name in self.output_nodes:
+            for onode_oslot in cur_node._oslot_to_otensor:
+              if (cur_node.name, onode_oslot) in self._oslot_to_inner_node_oslot.inv: 
+                custom_node_oslot = self._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
+                result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
+                    
+    return tuple([result[oslot] for oslot in output_names])

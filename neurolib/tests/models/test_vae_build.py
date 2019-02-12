@@ -21,9 +21,10 @@ from neurolib.models.vae import VariationalAutoEncoder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 2
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 1
+range_from = 0
+range_to = 1
+tests_to_run = list(range(range_from, range_to))
 
 class VAETestBuild(tf.test.TestCase):
   """
@@ -34,22 +35,13 @@ class VAETestBuild(tf.test.TestCase):
     """
     tf.reset_default_graph()
     
-  def test_init(self):
-    """
-    """
-    print("\nTest 0: VAE initialization")
-    VariationalAutoEncoder(input_dim=3,
-                           state_dim=10,
-                           batch_size=1)
-    
   def test_build(self):
     """
     """
     print("\nTest 1: VAE build")
-    dc = VariationalAutoEncoder(input_dim=3,
-                                state_dim=10,
-                                batch_size=1)
-    dc.build()
+    VariationalAutoEncoder(input_dim=3,
+                           state_dim=10,
+                           batch_size=1)
 
 
 if __name__ == '__main__':

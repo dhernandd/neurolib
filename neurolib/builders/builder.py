@@ -15,6 +15,8 @@
 # ==============================================================================
 import abc
 
+import tensorflow as tf
+
 from neurolib.encoder.deterministic import DeterministicNNNode #@UnusedImport
 from neurolib.utils.utils import check_name
 
@@ -45,15 +47,21 @@ class Builder(abc.ABC):
     self.scope = scope
     self.batch_size = batch_size
     
+    self.dummies = {}
+    if self.batch_size is None:
+      self.dummy_bsz = tf.placeholder(tf.int32, [None], 'dummy_bsz')
+      self.dummies['dummy_bsz'] = self.dummy_bsz.name
+
+    
     self.num_nodes = 0
     
     # Dictionaries that map name/label to node for the three node types.
     self.nodes = {}
     self.input_nodes = {}
-    self.output_nodes = {}
+#     self.output_nodes = {}
     self._label_to_node = {}
     
-    # Dictionaries for restoring a model
+    # for restoring a model
     self.otensor_names = {}
 
   @check_name
@@ -86,6 +94,9 @@ class Builder(abc.ABC):
     if num_inputs < 1:
       raise ValueError("`InnerNodes must have at least one input "
                        "(`num_inputs = {}`".format(num_inputs))
+    
+    self.add_node_to_model_graph()
+    
     if isinstance(node_class, str):
       node_class = innernode_dict[node_class]
     enc_node = node_class(self,
@@ -108,8 +119,3 @@ class Builder(abc.ABC):
     """
     raise NotImplementedError("Builders must implement build")
   
-  def visualize_model_graph(self, filename="model_graph"):
-    """
-    Generate a visual representation of the Model graph
-    """
-    self.model_graph.write_png(self.scope+filename)

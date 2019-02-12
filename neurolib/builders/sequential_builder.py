@@ -14,7 +14,6 @@
 #
 # ==============================================================================
 from neurolib.encoder.evolution_sequence import (RNNEvolutionSequence, 
-                                                 CustomEvolutionSequence,
                                                  NonlinearDynamicswGaussianNoise)
 from neurolib.utils.utils import check_name
 from neurolib.builders.static_builder import StaticBuilder
@@ -59,7 +58,6 @@ class SequentialBuilder(StaticBuilder):
   
   """
   ev_seq_dict = {'rnn' : RNNEvolutionSequence,
-                 'custom' : CustomEvolutionSequence,
                  'NLDSwGnoise' : NonlinearDynamicswGaussianNoise}
   def __init__(self,
                max_steps,
@@ -97,7 +95,6 @@ class SequentialBuilder(StaticBuilder):
                               is_sequence=True,
                               **dirs)
     self.input_sequences[node_name] = self.input_nodes[node_name]
-    
     return node_name
   
   @check_name
@@ -130,8 +127,8 @@ class SequentialBuilder(StaticBuilder):
   
   def addEvolutionSequence(self,
                            state_sizes,
-                           ev_seq_class='rnn',
                            cell_class=None,
+                           ev_seq_class='rnn',
                            num_inputs=1,
                            name=None,
                            name_prefix=None,
@@ -140,13 +137,16 @@ class SequentialBuilder(StaticBuilder):
     """
     Add an EvolutionSequence
     """
+    self.add_node_to_model_graph()
+    
     ev_seq_class = ev_seq_class
     if isinstance(ev_seq_class, str):
       ev_seq_class = self.ev_seq_dict[ev_seq_class]
+    
     print('cell_class', cell_class)
     node = ev_seq_class(self,
                         state_sizes,
-                        cell_class=cell_class,
+                        cell_class,
                         num_inputs=num_inputs,
                         name=name,
                         name_prefix=name_prefix,
@@ -157,17 +157,3 @@ class SequentialBuilder(StaticBuilder):
     self._label_to_node[node.label] = node
     
     return name
-      
-  def _check_items_do_exist(self):
-    """
-    TODO:
-    """
-    pass
-      
-  def check_graph_correctness(self):
-    """
-    Checks the coding graph outlined so far. 
-    
-    TODO:
-    """
-    pass

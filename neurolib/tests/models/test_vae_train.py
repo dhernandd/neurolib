@@ -13,17 +13,24 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
+import pickle
 
-import numpy as np
 import tensorflow as tf
 
 from neurolib.models.vae import VariationalAutoEncoder 
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 1
-test_to_run = 1 
+# NUM_TESTS : 1
+range_from = 0
+range_to = 1
+tests_to_run = list(range(range_from, range_to))
+
+with open(path + '/datadict_vae', 'rb') as f1:
+  dataset = pickle.load(f1)
 
 class VAETestTrain(tf.test.TestCase):
   """
@@ -34,24 +41,18 @@ class VAETestTrain(tf.test.TestCase):
     """
     tf.reset_default_graph()
   
-  @unittest.skipIf(test_to_run != 1, "Skipping Test 0")
+  @unittest.skipIf(0 not in tests_to_run, "Skipping Test 0")
   def test_train(self):
     """
     """
     print("\nTest 0: VAE initialization")
-    nsamps = 100
-    idim = 3
-    odim = 10
-    x = 1.0*np.random.randn(nsamps, idim)
-    W = np.random.randn(3, odim)
-    y = np.tanh(np.dot(x, W) + 0.1*np.random.randn(nsamps, odim)) # + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
-    dataset = {'train_observation' : y[:80],
-               'valid_observation' : y[80:]}
+    
         
-    vae = VariationalAutoEncoder(input_dim=3,
-                                 state_dim=10)
-    vae.build()
+    vae = VariationalAutoEncoder(input_dim=10,
+                                 state_dim=3)
+#                                  save_on_valid_improvement=True) # OK!
     vae.train(dataset, num_epochs=20)
     
 if __name__ == '__main__':
-  unittest.main(failfast=True)
+  unittest.main(failfast=True)    
+  

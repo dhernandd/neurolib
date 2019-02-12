@@ -13,6 +13,8 @@
 # limitations under the License.
 #
 # ==============================================================================
+import pickle
+
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
@@ -36,19 +38,17 @@ class fLDS(Model):
   TODO:
   """
   def __init__(self,
-               input_dims=None,
-               state_dims=None,
+               mode='new',
                builder=None,
+               input_dims=None,
+               state_dim=None,
                batch_size=1,
                max_steps=25,
-               rnn_cell_class='basic',
-               rnn_mode='fwd',
-#                seq_class=NonlinearDynamicswGaussianNoise,
-#                cell_class='basic',
-#                is_categorical=False,
-#                num_labels=None,
-               rslt_dir=None,
-               save=False,
+               save_on_valid_improvement=False,
+               root_rslts_dir=None,
+               keep_logs=False,
+               restore_dir=None,
+               restore_metafile=None,
                **dirs):
     """
     Initialize the fLDS
@@ -57,7 +57,7 @@ class fLDS(Model):
         input_dims (int or list of list of ints) : The dimensions of the input
             tensors occupying oslots in the Model Graph InputSequences.
         
-        state_dims (int or list of list of ints) : The dimensions of the outputs
+        state_dim (int or list of list of ints) : The dimensions of the outputs
             of the internal EvolutionSequence.
 
         num_inputs (int) : The number of Inputs 
@@ -72,135 +72,157 @@ class fLDS(Model):
         
         dirs (dict) :
     """
-    super(fLDS, self).__init__()
-    
+    self._main_scope = 'fLDS'
+    self.mode = mode
     self.builder = builder
-    if self.builder is None:
-      self._is_custom_build = False
-      if input_dims is None:
-        raise ValueError("Missing Argument `input_dims` is required to build "
-                         "the default DeepKalmanFilter")
-      if state_dims is None:
-        raise ValueError("Missing argument `state_dims` is required to build "
-                         "the default DeepKalmanFilter")
-#       else:
-#         if len(state_dims) > 1:
-#           raise ValueError("Argument `state_dims` must be a list of size >=2, "
-#                            "(len(state_dims) = {})".format(len(state_dims)))
+    self.save = save_on_valid_improvement
+    self.keep_logs = keep_logs
 
-      self.rnn_cell_class = rnn_cell_class
-#       self.seq_class = seq_class
-      self.rnn_mode = rnn_mode
-      
-      # Deal with dimensions
-      self.input_dims = input_dims
-      self.state_dims = state_dims
-      self._dims_to_list()
-      self.ydim = self.input_dims[0][0]
-      self.xdim = self.state_dims[0][0]
-#       self.main_input_dim = self.input_dims[:1]
-
-      self.num_inputs = len(self.input_dims)
-#       self.rnn_state_dims = (self.state_dims[0:1] if self.rnn_mode == 'fwd' 
-#                              else self.state_dims[0:2])
-#       self.num_rnn_state_dims = self.state_dims
-#       self.num_rnn_state_dims = len(self.rnn_state_dims)
-#       self.num_inputs_rnn = self.num_rnn_state_dims
-      
-#       self.ds_dims = (self.state_dims[1:] if self.rnn_mode == 'fwd' 
-#                       else self.state_dims[2:])
-      self.ds_dims = self.state_dims
-      self.num_ds_dims = len(self.ds_dims)
-      self.num_inputs_ds = self.num_ds_dims # + self.num_rnn_state_dims
-    else:
-      self._is_custom_build = True
-      
-      self.input_dims = builder.nodes['inputSeq'].main_output_sizes
+    super(fLDS, self).__init__(**dirs)
     
     self.batch_size = batch_size
-    self.max_steps = max_steps
-    
-    self._main_scope = 'fLDS'
-    self.rslt_dir = rslt_dir
-    self.save = save
-    
-    self._update_default_directives(**dirs)
+    if mode == 'new':
+      self.root_rslts_dir = root_rslts_dir or 'rslts/'
 
-    # Defined on build
-    self.nodes = None
-    self.cost = None
-    self.trainer = None
+      self.max_steps = max_steps
+      if self.builder is None:
+        self._is_custom_build = False
+        
+        if input_dims is None:
+          raise ValueError("Missing Argument `input_dims` is required to build "
+                           "the default fLDS")
+        if state_dim is None:
+          raise ValueError("Missing argument `state_dim` is required to build "
+                           "the default fLDS")
+        
+        # deal with dimensions
+        self.input_dims = self._dims_to_list(input_dims)
+        self.state_dims = self._dims_to_list(state_dim)
+        self.ydim = self.input_dims[0][0]
+        self.xdim = self.state_dims[0][0]
+  
+        self.num_inputs = len(self.input_dims)
+        self.ds_state_dim = self.state_dims
+      else:
+        self._is_custom_build = True
+
+      self.build()
+      
+    elif mode == 'restore':
+      print('Initiating Restore...')
+      self._is_built = True
+
+      # directory to store results
+      if restore_dir is None:
+        raise ValueError("Argument `restore_dir` must be provided in "
+                         "'restore' mode.")
+      self.rslts_dir = restore_dir if restore_dir[-1] == '/' else restore_dir + '/'
+      
+      # restore
+      self.restore(restore_metafile)
+      
+      # restore output_names and dummies
+      with open(self.rslts_dir + 'output_names', 'rb') as f1:
+        self.otensor_names = pickle.load(f1)
+        print("The following names are available for evaluation:")
+        print("\t" + '\n\t'.join(sorted(self.otensor_names.keys())))
+      with open(self.rslts_dir + 'dummies', 'rb') as f2:
+        self.dummies = pickle.load(f2)
+      
+      # trainer
+      tr_dirs = self.directives['tr']
+      self.trainer = GDTrainer(model=self,
+                               mode='restore',
+                               save_on_valid_improvement=self.save,
+                               restore_dir=self.rslts_dir,
+                               **tr_dirs)
     
-  def _dims_to_list(self):
+  def _dims_to_list(self, dims):
     """
     Store the dimensions of the Model in list of lists format
     """
-    if isinstance(self.input_dims, int):
-      self.input_dims = [[self.input_dims]]
-    if isinstance(self.state_dims, int):
-      self.state_dims = [[self.state_dims]]
-
-    # Fix dimensions for special cases
-    if self.rnn_cell_class == 'lstm':
-      if len(self.state_dims) == 1:
-        self.state_dims = self.state_dims*2
+    if isinstance(dims, int):
+      return [[dims]]
+    return dims
       
   def _update_default_directives(self,
                                  **directives):
     """
     Update the default directives with user-provided ones.
     """
-    self.directives = {'trainer' : 'gd',
-                       'loss_func' : 'elbo',
-                       'gd_optimizer' : 'adam',
-                       'lr' : 1e-3}
-    
-    self.directives.update(directives)
+    this_model_dirs = {}
+    if self.mode == 'new':
+      if self.builder is None:
+        this_model_dirs.update({'rec_loc_numlayers' : 2,
+                                'rec_loc_numnodes' : 128,
+                                'rec_loc_activations' : 'leaky_relu',
+                                'rec_loc_netgrowrate' : 1.0,
+                                'rec_shareparams' : False,
+                                'gen_wconstprecision' : True,
+                                'trainer' : 'gd'})
+    this_model_dirs.update({'tr_optimizer' : 'adam',
+                            'tr_lr' : 5e-4})
+    this_model_dirs.update(directives)
+    super(fLDS, self)._update_default_directives(**this_model_dirs)
             
   def build(self):
     """
-    Builds the DeepKalmanFilter
+    Build the fLDS
     """
     builder = self.builder
-    dirs = self.directives
     ydim = self.ydim
     xdim = self.xdim
+    
+    rec_dirs = self.directives['rec']
+    gen_dirs = self.directives['gen']
+    lds_dirs = self.directives['lds']
     if builder is None:
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
                                                  max_steps=self.max_steps) 
-      is1 = builder.addInputSequence([[ydim]], name='observation')
-      ins1 = builder.addInnerSequence([[xdim]], num_inputs=1, node_class=NormalPrecisionNode)
+      is1 = builder.addInputSequence([[ydim]], name='Observation')
+      ins1 = builder.addInnerSequence([[xdim]],
+                                      num_inputs=1,
+                                      node_class=NormalPrecisionNode,
+                                      name='InnSeq',
+                                      **rec_dirs)
       evs1 = builder.addEvolutionSequence([[xdim]],
                                           num_inputs=1,
-                                          cell_class=LDSCell)
-      m1 = builder.addMergeNode([[xdim]],
-                                node_list=[ins1, evs1],
+                                          cell_class=LDSCell,
+                                          name='LDS',
+                                          **lds_dirs)
+      m1 = builder.addMergeNode(node_list=[ins1, evs1],
                                 merge_class=MergeSeqsNormalLDSEv,
-                                name='Recognition')
+                                name='Recognition',
+                                **rec_dirs)
       ins2 = builder.addInnerSequence([[ydim]],
                                       num_inputs=1,
                                       node_class=NormalPrecisionNode,
                                       name='Generative',
-                                      with_constant_precision=True)
-      os1 = builder.addOutputSequence(name='prediction')
-      builder.addDirectedLink(is1, ins1)
-      builder.addDirectedLink(m1, ins2)
-      builder.addDirectedLink(ins2, os1)         
+                                      **gen_dirs)
+      builder.addDirectedLink(is1, ins1, islot=0)
+      builder.addDirectedLink(m1, ins2, islot=0)
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
     
+    # build the tensorflow graph
     builder.build()
-    self.nodes = self.builder.nodes
+    self.nodes = builder.nodes
+    self.otensor_names = builder.otensor_names
+    self.dummies = builder.dummies
     
-    cost = ('elbo', ('Generative', 'Recognition', 'observation'))
-    self.trainer = GDTrainer(self.builder,
-                             cost,
-                             name=self._main_scope,
-                             rslt_dir=self.rslt_dir,
-                             batch_size=self.batch_size,
-                             save=self.save,
-                             **dirs)
+    cost_declare = ('elbo', ('Generative', 'Recognition', 'Observation'))
+    cost_func = self.summaries_dict[cost_declare[0]]
+    self.cost = cost_func(self.nodes, cost_declare[1])
+    builder.add_to_output_names('cost', self.cost)
+
+    # trainer
+    tr_dirs = self.directives['tr']
+    self.trainer = GDTrainer(self,
+                             **tr_dirs)
+
+    if self.save:
+      self.save_otensor_names()
       
     self._is_built = True
 
@@ -208,44 +230,29 @@ class fLDS(Model):
     """
     Check that a user-declared build is consistent with the DeepKalmanFilter names
     """
-    if 'prediction' not in self.builder.output_nodes:
-      raise AttributeError("Node 'prediction' not found in custom build")
+    for key in ['Generative', 'Recognition']:
+      if key not in self.builder.nodes:
+        raise AttributeError("Node {} not found in custom build".format(key))
   
   def _check_dataset_correctness(self, dataset):
     """
     Check that the provided dataset is consistent with the DeepKalmanFilter names
     """
-    for key in ['train_observation', 'valid_observation']:
+    keys = ['train_Observation', 'valid_Observation']
+    for key in keys:
       if key not in dataset:
         raise AttributeError("dataset must contain key `{}` ".format(key))
-#     if not self._is_custom_build:
-#       for key in ['train_inputSeq', 'valid_inputSeq']:
-#         if key not in dataset:
-#           raise AttributeError("dataset must contain key `{}` ".format(key))
       
-  def train(self, dataset, num_epochs=100, **dirs):
+  def train(self, dataset, num_epochs=100):
     """
     Train the RNNClassifier model. 
     
     The dataset, provided by the client, should have keys:
     """
     self._check_dataset_correctness(dataset)
-    
     dataset_dict = self.prepare_datasets(dataset)
 
     self.trainer.train(dataset_dict,
                        num_epochs,
                        batch_size=self.batch_size)
-  
-  def eval(self, node, dataset, oslot=0, lmbda=None):
-    """
-    """
-    dataset_dict = self.prepare_datasets(dataset)
-    dataset = dataset_dict['train']
-    return self.builder.eval(node, dataset, oslot, lmbda)
-  
-  def sample(self, input_data, node='prediction', islot=0):
-    """
-    """
-    return Model.sample(self, input_data, node, islot=islot)
   

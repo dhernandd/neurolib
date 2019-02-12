@@ -13,9 +13,11 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
+import pickle
 
-import numpy as np
 import tensorflow as tf
 
 from neurolib.models.vae import VariationalAutoEncoder 
@@ -24,21 +26,13 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 2
-test_to_run = list(range(NUM_TESTS))
+# NUM_TESTS : 2
+range_from = 0
+range_to = 2
+tests_to_run = list(range(range_from, range_to))
         
-def generate_some_data():
-  """
-  """
-  nsamps = 100
-  idim = 3
-  odim = 10
-  x = 1.0*np.random.randn(nsamps, idim)
-  W = np.random.randn(3, odim)
-  y = np.tanh(np.dot(x, W) + 0.1*np.random.randn(nsamps, odim)) # + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
-  dataset = {'train_observation' : y[:80],
-             'valid_observation' : y[80:]}
-  return dataset
+with open(path + '/datadict_vae', 'rb') as f1:
+  dataset = pickle.load(f1)
 
 class VAETestCustTrain(tf.test.TestCase):
   """
@@ -49,19 +43,17 @@ class VAETestCustTrain(tf.test.TestCase):
     """
     tf.reset_default_graph()
 
-  @unittest.skipIf(0 not in test_to_run, "Skipping") 
+  @unittest.skipIf(0 not in tests_to_run, "Skipping") 
   def test_train1(self):
     """
     """
-    dataset = generate_some_data()
-    
     dirs = {}
     builder = StaticBuilder(scope='vae')
     
     odim = 10
     idim = 3
     hdim = 16
-    i1 = builder.addInput(odim, name='observation', **dirs)
+    i1 = builder.addInput(odim, name='Observation', **dirs)
     enc0 = builder.addInner(hdim,
                             name='Inner')
     enc1 = builder.addInner(idim,
@@ -70,65 +62,56 @@ class VAETestCustTrain(tf.test.TestCase):
     enc2 = builder.addInner(odim,
                             name='Generative',
                             node_class=NormalTriLNode)
-    o1 = builder.addOutput(name='copy')
   
-    builder.addDirectedLink(i1, enc0)
-    builder.addDirectedLink(enc0, enc1)
-    builder.addDirectedLink(enc1, enc2, oslot=0)
-    builder.addDirectedLink(enc2, o1, oslot=0)
+    builder.addDirectedLink(i1, enc0, islot=0)
+    builder.addDirectedLink(enc0, enc1, islot=0)
+    builder.addDirectedLink(enc1, enc2, islot=0)
 
     vae = VariationalAutoEncoder(builder=builder)
-    vae.build()
-    vae.train(dataset, num_epochs=20)
+#                                  save_on_valid_improvement=True) # OK!
+    vae.train(dataset, num_epochs=10)
 
-  @unittest.skipIf(1 not in test_to_run, "Skipping")
+  @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_train_custom_node2(self):
     """
     Test commit
     """
     print("Test 2: with CustomNode\n")
-    dataset = generate_some_data()
     
     builder = StaticBuilder("MyModel")
-    enc_dirs = {'num_layers' : 2,
-                'num_nodes' : 64,
-                'activation' : 'leaky_relu',
-                'net_grow_rate' : 1.0 }
+    enc_dirs = {'loc_numlayers' : 2,
+                'loc_numnodes' : 64,
+                'loc_activations' : 'leaky_relu',
+                'loc_netgrowrate' : 1.0 }
     
     input_dim = 10
-    in0 = builder.addInput(input_dim, name='observation')
+    in0 = builder.addInput(input_dim, name='Observation')
     
     # Define Custom Recognition Model
     cust_rec = builder.createCustomNode(1, 1, name="Recognition")
     cust_rinn1 = cust_rec.addInner(3,
                                    node_class=NormalTriLNode,
-                                   directives=enc_dirs)
+                                   **enc_dirs)
     cust_rec.declareIslot(islot=0, innernode_name=cust_rinn1, inode_islot=0)
-    cust_rec.declareOslot(oslot=0, innernode_name=cust_rinn1, inode_oslot=0)
-    cust_rec.commit()
+    cust_rec.declareOslot(oslot='main', innernode_name=cust_rinn1, inode_oslot='main')
     
     # Define Custom Generative Model
     cust_gen = builder.createCustomNode(1, 1, name="Generative")
-    cust_ginn1 = cust_gen.addInner(16, directives=enc_dirs)
+    cust_ginn1 = cust_gen.addInner(16)
     cust_ginn2 = cust_gen.addInner(10,
                                    node_class=NormalTriLNode,
-                                   directives=enc_dirs)
-    cust_gen.addDirectedLink(cust_ginn1, cust_ginn2)
+                                   **enc_dirs)
+    cust_gen.addDirectedLink(cust_ginn1, cust_ginn2, islot=0)
     cust_gen.declareIslot(islot=0, innernode_name=cust_ginn1, inode_islot=0)
-    cust_gen.declareOslot(oslot=0, innernode_name=cust_ginn2, inode_oslot=0)
-    cust_gen.commit()
-    
-    out0 = builder.addOutput(name='prediction')
+    cust_gen.declareOslot(oslot='main', innernode_name=cust_ginn2, inode_oslot='main')
     
     # Link all of it
-    builder.addDirectedLink(in0, cust_rec)
-    builder.addDirectedLink(cust_rec, cust_gen)
-    builder.addDirectedLink(cust_gen, out0)
+    builder.addDirectedLink(in0, cust_rec, islot=0)
+    builder.addDirectedLink(cust_rec, cust_gen, islot=0)
 
     # Define VAE and train
     vae = VariationalAutoEncoder(builder=builder)
-    vae.build()
-    vae.train(dataset, num_epochs=20)
+    vae.train(dataset, num_epochs=10)
 
   
 

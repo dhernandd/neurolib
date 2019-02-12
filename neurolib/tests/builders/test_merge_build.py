@@ -44,8 +44,7 @@ class MergeNormalsTest(tf.test.TestCase):
     builder = StaticBuilder(scope='Main')
     in1 = builder.addInner([[3]], num_inputs=1, node_class=NormalTriLNode)
     in2 = builder.addInner([[3]], num_inputs=1, node_class=NormalTriLNode)
-    builder.addMergeNode([[3]], 
-                         [in1, in2],
+    builder.addMergeNode(node_list=[in1, in2],
                          merge_class=MergeNormals)
   
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
@@ -55,14 +54,17 @@ class MergeNormalsTest(tf.test.TestCase):
     """
     builder = StaticBuilder(scope='Main')
     i1 = builder.addInput([[1]])
-    in1 = builder.addInner([[3]], num_inputs=1, node_class=NormalTriLNode)
-    in2 = builder.addInner([[3]], num_inputs=1, node_class=NormalTriLNode)
-    builder.addDirectedLink(i1, in1)
-    builder.addDirectedLink(i1, in2)
-    builder.addMergeNode([[3]],
-                         [in1, in2],
-                         merge_class=MergeNormals)
+    in1 = builder.addInner([[3]], node_class=NormalTriLNode)
+    in2 = builder.addInner([[3]], node_class=NormalTriLNode)
+    builder.addDirectedLink(i1, in1, islot=0)
+    builder.addDirectedLink(i1, in2, islot=0)
+    m1 = builder.addMergeNode([in1, in2],
+                              merge_class=MergeNormals)
     builder.build()
+    m1 = builder.nodes[m1]
+    self.assertIn('loc', m1._oslot_to_otensor)
+    self.assertIn('main', m1._oslot_to_otensor)
+    self.assertIn('cov', m1._oslot_to_otensor)
 
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
   def test_merge_build2(self):
@@ -72,15 +74,13 @@ class MergeNormalsTest(tf.test.TestCase):
     builder = StaticBuilder(scope='Main')
     i1 = builder.addInput([[3]], iclass=NormalInputNode)
     i2 = builder.addInput([[3]], iclass=NormalInputNode)
-    m1 = builder.addMergeNode([[3]],
-                              [i1, i2],
+    m1 = builder.addMergeNode(node_list=[i1, i2],
                               merge_class=MergeNormals)
     builder.build()
     
-    o3 = builder.eval_output(i1, oslot=2)
-    print(o3)
-    s3 = builder.eval_output(m1, oslot=2)
-    print(s3)
+    s3 = builder.eval_node_oslot(m1, oslot='cov')
+    print("merge output", s3)
+    print("merge output shape", s3.shape)
     
 
 if __name__ == "__main__":

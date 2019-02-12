@@ -17,7 +17,7 @@ import abc
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-            
+
 class Trainer(abc.ABC):
   """
   TODO: Implement training with tensorflow Queues. This is IMPORTANT! Get rid of
@@ -25,6 +25,17 @@ class Trainer(abc.ABC):
   
   TODO: Put the abc functionality to use
   """
+  def __init__(self, **dirs):
+    """
+    """
+    self._update_directives(**dirs)
+    
+  def _update_directives(self, **dirs):
+    """
+    """
+    self.directives = {}
+    self.directives.update(dirs)
+
   @abc.abstractmethod 
   def update(self, sess, dataset, batch_size):
     """

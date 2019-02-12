@@ -13,10 +13,8 @@
 # limitations under the License.
 #
 # ==============================================================================
-import os.path
-
-my_path = os.path.abspath(os.path.dirname(__file__))
-
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
 import pickle
 
@@ -30,6 +28,11 @@ from neurolib.models.flds import fLDS
 range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
+
+fname = '/datadict_gaussianobs2D'
+with open(path + fname, 'rb') as f:
+  datadict = pickle.load(f)
+
 
 class fLDSTestTrain(tf.test.TestCase):
   """
@@ -46,19 +49,17 @@ class fLDSTestTrain(tf.test.TestCase):
     print("\nTest 1: fLDS build")
 
     dataset = {}
-    fname = my_path + '/datadict_gaussianobs2D'
-    with open(fname, 'rb') as f:
-      datadict = pickle.load(f)
-      Ytrain = datadict['Ytrain']
-      Yshape = Ytrain.shape
-      dataset['train_observation'] = Ytrain
-      dataset['valid_observation'] = datadict['Yvalid']
-      max_steps, input_dims = Yshape[-2], Yshape[-1]
+    Ytrain = datadict['Ytrain']
+    Yshape = Ytrain.shape
+    print("Yshape", Yshape)
+    dataset['train_Observation'] = Ytrain
+    dataset['valid_Observation'] = datadict['Yvalid']
+    max_steps, input_dims = Yshape[-2], Yshape[-1]
       
-    flds = fLDS(input_dims=[[input_dims]],
+    flds = fLDS(input_dims=input_dims,
+                state_dim=[[2]],
                 max_steps=max_steps,
-                state_dims=[[3]])
-    flds.build()
+                save_on_valid_improvement=True)
     flds.train(dataset, num_epochs=10)
     
 

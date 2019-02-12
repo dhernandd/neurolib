@@ -90,3 +90,61 @@ def addDateTime(s = ""):
     date = date[2:4] + date[5:7] + date[8:10] + '_' + date[11:13] + date[14:16]
     return s + 'D' + date
   
+def generate_Regression_data():
+  """
+  """
+  x = 10.0*np.random.randn(100, 2)
+  y = x[:,0:1] + 1.5*x[:,1:]# + 3*x[:,1:]**2 + 0.5*np.random.randn(100,1)
+  xtrain, xvalid, xtest = x[:80], x[80:90], x[90:]
+  ytrain, yvalid, ytest = y[:80], y[80:90], y[90:]
+  dataset = {'train_Features' : xtrain,
+             'train_Observation' : ytrain,
+             'valid_Features' : xvalid,
+             'valid_Observation' : yvalid,
+             'test_Features' : xtest,
+             'test_Observation' : ytest}
+  return dataset
+
+def generate_echo_data(length=10000, echo_step=3, max_steps=25):
+  """
+  Generate some echo data
+  """
+  x = np.array(np.random.normal(size=length))
+  y = np.roll(x, echo_step)
+  y[0:echo_step] = 0
+  
+  X = np.reshape(x, [-1, max_steps, 1])
+  Y = np.reshape(y, [-1, max_steps, 1])
+
+  dataset = {'train_Features' : X[:300],
+             'train_Observation' : Y[:300],
+             'valid_Features' : X[300:],
+             'valid_Observation' : Y[300:]}
+
+  return dataset
+
+def generate_echo_data_cat(num_labels=4, length=10000, echo_step=3, max_steps=25):
+  """
+  Generate some echo categorical data
+  """
+  p = num_labels*[1/num_labels]
+  x = np.array(np.random.choice(num_labels, length, p=p))
+  y = np.roll(x, echo_step)
+  y[0:echo_step] = 0
+
+  X = np.reshape(x, [-1, max_steps, 1])
+  Y = np.reshape(y, [-1, max_steps, 1])
+
+  dataset = {'train_Features' : X[:300],
+             'train_Observation' : Y[:300],
+             'valid_Features' : X[300:],
+             'valid_Observation' : Y[300:]}
+
+  return dataset
+
+if __name__ == '__main__':
+  import pickle
+  fname = 'datadict_seq01cat'
+  with open(fname, 'wb') as f:
+    dset = generate_echo_data_cat()
+    pickle.dump(dset, f)

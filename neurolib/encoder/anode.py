@@ -17,6 +17,7 @@ import abc
 from collections import defaultdict
 from bidict import bidict
 
+import tensorflow as tf
 # pylint: disable=bad-indentation, protected-access, no-member
 
 class ANode(abc.ABC):
@@ -71,41 +72,48 @@ class ANode(abc.ABC):
     TODO: Should the client be able to pass a tensorflow op directly? In
     that case, ANode could act as a simple wrapper that returns the input and
     the output.
+    
+    A child of ANode should implement __call__, get_outputs, _build.
     """
-    self._num_declared_inputs = 0
-    self._num_declared_outputs = 0
-    
-    # Dictionaries for access    
-    self._islot_to_shape = {}
-    self._oslot_to_shape = {}
-    self._islot_to_itensor = {}
-    self._oslot_to_otensor = {}
-    self.islot_to_name = bidict({})
-    self.oslot_to_name = bidict({})
-    
-    self._built_parents = {}
-    self._child_label_to_slot_pairs = defaultdict(list)
-    self._parent_label_to_islot = defaultdict(list)
-    
-    self._is_built = False
-
-    # Set the node label and name
+    # set builder attr and node label
     self.builder = builder
     self.label = builder.num_nodes
     builder.num_nodes += 1
+    self._is_built = False
+
+    # set name
     if not hasattr(self, 'name'):
       self.name = name_prefix + '_' + str(self.label)
-    
-    # Set the batch size, max_steps
+
+    self._num_declared_inputs = 0
+    self._num_declared_outputs = 0
+
+    # batch size, max_steps
     self.batch_size = builder.batch_size
     self.is_sequence = is_sequence
     self.max_steps = builder.max_steps if is_sequence else None
     
+    # Dictionaries for islot/oslot access    
+    self._islot_to_shape = {}
+    self._oslot_to_shape = {}
+    self._oslot_to_otensor = {}
+    self.islot_to_name = bidict({})
+    self.oslot_to_name = bidict({})
+    
+    # Dictionaries for building the MG
+    self._built_parents = {}
+    self._child_label_to_slot_pairs = defaultdict(list)
+    self._parent_label_to_islot = defaultdict(list)
+
     # Update directives
     self._update_directives(**dirs)
   
   def _set_name_or_get_name_prefix(self, name=None, name_prefix=None):
     """
+    Set the node name if `name` is provided, else return `name_prefix`.
+    
+    NOTE: In case `name` is not provided, the `name` attribute is set during
+    the call to ANode.__init__()
     """
     if name is not None:
       self.name = name
@@ -157,19 +165,22 @@ class ANode(abc.ABC):
                                                            self.num_expected_outputs))
     self._num_declared_outputs = value
   
-  def _update_directives(self, **dirs):
+  def _update_directives(self, **directives):
     """
-    Update the node directive
-    
-    Here, every ANode dictionary of directives is defined.
+    Update the node directives
     """
     self.directives = {}
-    self.directives.update(dirs)
+    self.directives.update(directives)
   
   @staticmethod
   def state_sizes_to_list(state_sizes):
     """
-    Get a list of output sizes corresponding to each oslot
+    Deal with different types of user provided state_sizes.
+    
+    Returns a list of lists of state sizes.
+    
+    NOTE: Call this method upon node initialization before any call to super to
+    homogenize the user input
     """
     if isinstance(state_sizes, int):
       state_sizes = [[state_sizes]]
@@ -179,8 +190,16 @@ class ANode(abc.ABC):
                         "of int")
     return state_sizes
     
+  def _get_all_oshapes(self):
+    """
+    Declare the shapes for every output
+    """
+    raise NotImplementedError
+    
   def get_state_full_shapes(self):
     """
+    Deprecated!
+    
     Get the state size shapes for this ANode    
     """
     bsz = self.batch_size
@@ -198,39 +217,56 @@ class ANode(abc.ABC):
     """
     return [len(sz) for sz in self.state_sizes]
     
-  def get_islot_shape(self, islot=0):
+  def get_islot_shape(self, islot, iname):
     """
     Return the incoming shape corresponding to this islot.
     
     Args:
         islot (int) : The islot whose
     """
-    return self._islot_to_shape[islot]
+    return self._islot_to_shape[islot][iname]
 
-  def get_oslot_shape(self, oslot=0):
+  def get_oslot_shape(self, oname):
     """
-    Return the outgoing shape corresponding to this oslot.
+    Return the outgoing shape corresponding to this oname.
     """
-    return self._oslot_to_shape[oslot]
+    return self._oslot_to_shape[oname]
 
-  def get_input(self, islot):
+  def fill_oslot_with_tensor(self, oslot, tensor, name=None):
+    """
+    Assign otensor to its oslot.
+    
+    NOTE: A user-friendly key with the structure 'Node:key' is added to the dict
+    `builder.otensor_names`, pointing to the tensorflow name of the tensor. This
+    dictionary is pickled when a model is saved and loaded upon restore to
+    provide access to the names in the tensorflow graph.
+    """
+    oname = self.oslot_names[oslot] if name is None else name
+
+    oslot_name = self.name + '_' + oname
+    o = tf.identity(tensor, name=oslot_name)
+    self._oslot_to_otensor[oname] = o
+    o_rname = self.name + ':' + oname
+    self.builder.otensor_names[o_rname] = o.name
+          
+  def get_input_tensor(self, islot, iname):
     """
     Return a dictionary whose keys are the islots of the ANode and whose values
     are the incoming tensorflow Tensors.
     
     Requires the node to be built.
     """
-    return self._islot_to_itensor[islot]
-    
-  def get_output(self, oslot):
+    return self._islot_to_itensor[islot][iname]
+
+  def get_output_tensor(self, oname):
     """
     Return a dictionary whose keys are the oslots of the ANode and whose values
     are the outgoing tensorflow Tensors.
     
     Requires the node to be built.
     """
-    return self._oslot_to_otensor[oslot]
-  
+    return self._oslot_to_otensor[oname]
+
   def update_when_linked_as_node1(self):
     """
     Execute after linking as parent node
@@ -243,8 +279,23 @@ class ANode(abc.ABC):
     """
     return
     
-  def __call__(self, inputs, state):
+  def __call__(self, *inputs):
     """
+    Evaluate the node on a list of inputs.
+    
+    NOTE: Delegate to get_outputs
     """
-    raise NotImplementedError("")
+    raise NotImplementedError("Please implement me.")
+
+  def get_outputs(self, islot_to_itensor=None):
+    """
+    Evaluate the node on a dict of inputs. 
+    """
+    raise NotImplementedError("Please implement me.")
+  
+  def _build(self):
+    """
+    Build the node
+    """
+    raise NotImplementedError("Please implement me.")    
   

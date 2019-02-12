@@ -13,9 +13,14 @@
 # limitations under the License.
 #
 # ==============================================================================
+import pickle
+
+import numpy as np
+
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
+from neurolib.utils.analysis import compute_R2_from_sequences
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -25,23 +30,24 @@ class PredictorRNN(Model):
   sequences of inputs.
   
   [MORE THAN ONE INPUT OR OUTPUT CURRENTLY NOT IMPLEMENTED]
-  
-  
   """
   def __init__(self,
-               input_dims=None,
-               state_dims=None,
-               output_dims=None,
-               num_inputs=1,
+               mode='new',
                builder=None,
                batch_size=1,
                max_steps=25,
                seq_class='rnn',
                cell_class='basic',
+               input_dims=None,
+               state_dims=None,
+               output_dims=None,
                num_labels=None,
                is_categorical=False,
-               rslt_dir=None,
-               save=False,
+               save_on_valid_improvement=False,
+               root_rslts_dir='rslts/',
+               keep_logs=False,
+               restore_dir=None,
+               restore_metafile=None,               
                **dirs):
     """
     Initialize the PredictorRNN
@@ -55,8 +61,6 @@ class PredictorRNN(Model):
 
         output_dims (int) : The dimensions of the output tensors occupying
             islots in the MG OutputSequences.
-        
-        num_inputs (int) : The number of Inputs 
         
         builder (SequentialBuilder) :
         
@@ -74,60 +78,88 @@ class PredictorRNN(Model):
         
         dirs (dict) :
     """
-    super(PredictorRNN, self).__init__()
-    
+    self._main_scope = 'PredictorRNN'
+    self.mode = mode
     self.builder = builder
-    if self.builder is None:
-      self._is_custom_build = False
-      if input_dims is None:
-        raise ValueError("Argument input_dims is required to build the default "
-                         "RNNClassifier")
-      if state_dims is None:
-        raise ValueError("Argument state_dims is required to build the default "
-                         "RNNClassifier")
-      if output_dims is None and not is_categorical:
-        raise ValueError("Argument output_dims is required to build the default "
-                         "RNNClassifier")
-      if num_labels is None and is_categorical:
-        raise ValueError("Argument num_labels is required to build the default "
-                         "RNNClassifier")
+    self.save = save_on_valid_improvement
+    self.keep_logs = keep_logs
 
-      self.cell_class = cell_class
-      self.seq_class = seq_class
-      
-      # Deal with dimensions
-      self.input_dims = input_dims
-      self.state_dims = state_dims
-      self.output_dims = output_dims
-      self._dims_to_list()
-    else:
-      self._is_custom_build = True
-      
-#       self.input_dims = builder.nodes['observation_in'].main_output_sizes
-      self.input_dims = builder.nodes['observation_in'].state_sizes
-    
-    self.num_inputs = num_inputs
-    self.is_categorical = is_categorical
-    if is_categorical:
-      if not num_labels:
-        raise ValueError("`num_labels` argument must be a positive integer "
-                         "for categorical data")
-      self.num_labels = num_labels
+    super(PredictorRNN, self).__init__(**dirs)
     
     self.batch_size = batch_size
-    self.max_steps = max_steps
-    
-    self._main_scope = 'PredictorRNN'
-    self.rslt_dir = rslt_dir
-    self.save = save
-    
-    self._update_default_directives(**dirs)
+    if mode == 'new':
+      self.root_rslts_dir = root_rslts_dir
 
-    # Defined on build
-    self.nodes = None
-    self.cost = None
-    self.trainer = None
+      self.max_steps = max_steps
+      self.is_categorical = is_categorical
+      if self.builder is None:
+        self._is_custom_build = False
 
+        # cell, seq classes
+        self.cell_class = cell_class
+        self.seq_class = seq_class
+
+        # shapes
+        if input_dims is None:
+          raise ValueError("Argument input_dims is required to build the default "
+                           "RNNClassifier")
+        if state_dims is None:
+          raise ValueError("Argument state_dims is required to build the default "
+                           "RNNClassifier")
+        if output_dims is None and not is_categorical:
+          raise ValueError("Argument output_dims is required to build the default "
+                           "RNNClassifier")
+        if num_labels is None and is_categorical:
+          raise ValueError("Argument num_labels is required to build the default "
+                           "RNNClassifier")
+        self.input_dims = input_dims
+        self.state_dims = state_dims
+        self.output_dims = output_dims
+        self._dims_to_list()
+        
+      else:
+        self._is_custom_build = True
+        self._check_custom_build()
+        
+        self.input_dims = builder.nodes['Features'].state_sizes
+      
+      if is_categorical:
+        if not num_labels:
+          raise ValueError("`num_labels` argument must be a positive integer "
+                         "for categorical data")
+      self.num_labels = num_labels
+
+      self.build()
+    
+    elif mode == 'restore':
+      print('Initiating Restore...')
+      self._is_built = True
+
+      # directory to store results
+      if restore_dir is None:
+        raise ValueError("Argument `restore_dir` must be provided in "
+                         "'restore' mode.")
+      self.rslt_dir = restore_dir if restore_dir[-1] == '/' else restore_dir + '/'
+      
+      # restore
+      self.restore(restore_metafile)
+      
+      # restore output_names and dummies
+      with open(self.rslt_dir + 'output_names', 'rb') as f1:
+        self.otensor_names = pickle.load(f1)
+        print("The following names are available for evaluation:")
+        print("\t" + '\n\t'.join(sorted(self.otensor_names.keys())))
+      with open(self.rslt_dir + 'dummies', 'rb') as f2:
+        self.dummies = pickle.load(f2)
+      
+      # trainer
+      tr_dirs = self.directives['tr']
+      self.trainer = GDTrainer(model=self,
+                               mode='restore',
+                               save_on_valid_improvement=self.save,
+                               restore_dir=self.rslt_dir,
+                               **tr_dirs)
+      
   def _dims_to_list(self):
     """
     Store the dimensions of the Model in list of lists format
@@ -149,62 +181,78 @@ class PredictorRNN(Model):
     """
     Update the default directives with user-provided ones.
     """
-    self.directives = {'trainer' : 'gd',
-                       'loss_func' : 'cross_entropy',
-                       'gd_optimizer' : 'adam',
-                       'lr' : 1e-3}
-    
-    self.directives.update(directives)
+    this_model_dirs = {'tr_optimizer' : 'adam',
+                       'tr_lr' : 1e-3}
+    this_model_dirs.update(directives)
+    super(PredictorRNN, self)._update_default_directives(**this_model_dirs)
             
   def build(self):
     """
     Builds the PredictorRNN
     """
+    if self._is_built:
+      raise ValueError("Node is already built")
     builder = self.builder
-    dirs = self.directives
+
+    obs_dirs = self.directives['obs']
+    ftrs_dirs = self.directives['ftrs']
+    rnn_dirs = self.directives['rnn']
+    pred_dirs = self.directives['model']
     if builder is None:
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
                                                  max_steps=self.max_steps)
+      
       nstate_dims, ninput_dims = len(self.state_dims), len(self.input_dims)
       ninputs_evseq = ninput_dims + nstate_dims
-      is1 = builder.addInputSequence(self.input_dims, name='observation_in')
+      is1 = builder.addInputSequence(self.input_dims,
+                                     name='Features',
+                                     **ftrs_dirs)
       evs1 = builder.addEvolutionSequence(state_sizes=self.state_dims,
                                           num_inputs=ninputs_evseq,
                                           ev_seq_class=self.seq_class,
                                           cell_class=self.cell_class,
-                                          name='ev_seq',
-                                          **dirs)
+                                          name='RNN',
+                                          **rnn_dirs)
       if self.is_categorical:
-        inn1 = builder.addInnerSequence(self.num_labels)
+        inn1 = builder.addInnerSequence(self.num_labels,
+                                        name='Prediction',
+                                        **pred_dirs)
       else:
-        inn1 = builder.addInnerSequence(self.output_dims)
-      os1 = builder.addOutputSequence(name='prediction')
-            
+        inn1 = builder.addInnerSequence(self.output_dims,
+                                        name='Prediction',
+                                        **pred_dirs)            
       builder.addDirectedLink(is1, evs1, islot=nstate_dims)
-      builder.addDirectedLink(evs1, inn1)
-      builder.addDirectedLink(inn1, os1)      
+      builder.addDirectedLink(evs1, inn1, islot=0)
     else:
-      self._check_custom_build()
       builder.scope = self._main_scope
     data_type = 'int32' if self.is_categorical else 'float64'
-    is2 = builder.addInputSequence(self.input_dims, name='observation_out', dtype=data_type)
-    os2 = builder.addOutputSequence(name='observation')
-    builder.addDirectedLink(is2, os2)
+    builder.addInputSequence(self.input_dims,
+                             name='Observation',
+                             dtype=data_type,
+                             **obs_dirs)
     
+    # build the tensorflow graph
     builder.build()
-    self.nodes = self.builder.nodes
+    self.nodes = builder.nodes
+    self.otensor_names = builder.otensor_names
+    self.dummies = self.builder.dummies
     
+    # define cost and trainer attribute
     if self.is_categorical:
-      cost = ('cross_entropy_wlogits', ('observation', 'prediction'))
+      cost_declare = ('cross_entropy_wlogits', ('Observation', 'Prediction'))
     else:
-      cost = ('mse', ('observation', 'prediction'))
-    self.trainer = GDTrainer(self.builder,
-                             cost,
-                             name=self._main_scope,
-                             rslt_dir=self.rslt_dir,
-                             batch_size=self.batch_size,
-                             save=self.save,
-                             **dirs)
+      cost_declare = ('mse', ('Observation', 'Prediction'))
+    cost_func = self.summaries_dict[cost_declare[0]]
+    self.cost = cost_func(self.nodes, cost_declare[1])
+    builder.add_to_output_names('cost', self.cost)
+
+    # trainer
+    tr_dirs = self.directives['tr']
+    self.trainer = GDTrainer(self,
+                             root_rslts_dir=self.root_rslts_dir,
+                             **tr_dirs)
+    if self.save:
+      self.save_otensor_names()
       
     self._is_built = True
 
@@ -212,36 +260,84 @@ class PredictorRNN(Model):
     """
     Check that a user-declared build is consistent with the RNNPredictor names
     """
-    if 'prediction' not in self.builder.output_nodes:
-      raise AttributeError("Node 'prediction' not found in custom build")
+    for nname in ['Prediction', 'Features']:
+      if nname not in self.builder.nodes:
+        raise AttributeError("Node {} not found in custom build".format(nname))
   
   def _check_dataset_correctness(self, dataset):
     """
     Check that the provided dataset is coconsistent with the RNNPredictor names
     """
-    for key in ['train_observation_out', 'valid_observation_out']:
+    for key in ['train_Observation', 'valid_Observation']:
       if key not in dataset:
         raise AttributeError("dataset must contain key `{}` ".format(key))
-    if not self._is_custom_build:
-      for key in ['train_observation_in', 'valid_observation_in']:
-        if key not in dataset:
-          raise AttributeError("dataset must contain key `{}` ".format(key))
       
-  def train(self, dataset, num_epochs=100, **dirs):
+  def train(self, dataset, num_epochs=100):
     """
     Train the RNNClassifier model. 
     
     The dataset, provided by the client, should have keys:
     """
     self._check_dataset_correctness(dataset)
-    
     dataset_dict = self.prepare_datasets(dataset)
 
     self.trainer.train(dataset_dict,
                        num_epochs,
                        batch_size=self.batch_size)
-  
-  def sample(self, input_data, node='prediction', islot=0):
+    
+  def anal_R2(self,
+              dataset,
+              subdset='valid',
+              axis=None):
     """
     """
-    return Model.sample(self, input_data, node, islot=islot)
+    data = dataset[subdset + '_' + 'Observation']
+    preds = self.eval('Prediction:main', dataset, key=subdset)[0] # eval returns a list
+    R2 = compute_R2_from_sequences(data, preds, axis=axis)
+    return R2
+    
+  def anal_kR2(self,
+               dataset,
+               subdset='valid',
+               key='Observation', 
+               up_to_k=10,
+               start_bin=1,
+               end_bin='last'):
+    """
+    FIX!
+    """
+    print(end_bin)
+    data = dataset[subdset + '_' + key]
+    if start_bin == 'first':
+      start_bin = 1
+      
+    def fill_with_zeros(dataset, subdset, key, start_bin):
+      """
+      """
+      dataset = dict(dataset) # do NOT modify original dset
+
+      key = '_'.join([subdset, key])
+      dataset[key][:,start_bin:] = 0.0
+      return dataset
+
+    for k in range(1, up_to_k):
+      kR2 = np.zeros([self.max_steps])
+      for tbin in range(start_bin, self.max_steps):
+        """
+        """
+        dset_zs = fill_with_zeros(dataset, 'valid', 'Features', tbin)
+        preds = self.eval('Prediction:main', dset_zs, key=subdset)[0] # eval returns a list
+        kR2 = compute_R2_from_sequences(data, preds, start_bin=tbin+k)
+      
+      if start_bin == 'last':
+        dataset_zs = fill_with_zeros(dataset, 'valid', 'Features', -k)
+      elif start_bin == 'first':
+        raise NotImplementedError
+       
+      print("dataset.keys()", dataset.keys())
+      preds = self.eval('Prediction:main', dataset_zs, key=subdset)[0] # eval returns a list
+      kR2 = compute_R2_from_sequences(data, preds, start_bin=-k)
+    
+    return kR2
+    
+    

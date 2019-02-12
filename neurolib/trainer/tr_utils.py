@@ -21,13 +21,26 @@ def batch_iterator_from_dataset(dataset, batch_size, shuffle=True):
   """
   Make a batch iterator from a dataset
   """
-  nsamps = len(list(dataset.values())[0])
+  dummies = {}
+  nsamps = 0
+  for key in list(dataset.keys()):
+    if not key.startswith('dummy'):
+      if not nsamps:
+        nsamps = dataset[key].shape[0]
+    else:
+      dummies[key] = dataset.pop(key)
+  
+#   nsamps = len(list(dataset.values())[0])
+#   print("dummies.items()",dummies.items())
   l_inds = np.arange(nsamps)
   if shuffle:
     np.random.shuffle(l_inds)
   for idx in range(nsamps//batch_size):
-    yield {key : value[l_inds[idx:idx+batch_size]] for key, value
-           in dataset.items()}
+    batch = {key : value[l_inds[idx:idx+batch_size]] for key, value
+             in dataset.items()}
+    batch.update(dummies)
+#     print("batch", batch)
+    yield batch
 
 def get_keys_and_data(dataset):
   """

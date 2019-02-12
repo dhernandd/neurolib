@@ -13,36 +13,24 @@
 # limitations under the License.
 #
 # ==============================================================================
-import unittest
-
-import tensorflow as tf
-
-from neurolib.models.dkf import DeepKalmanFilter
+import numpy as np
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 1
-range_from = 0
-range_to = 1
-tests_to_run = list(range(range_from, range_to))
-
-class DKFTestBuild(tf.test.TestCase):
+def compute_mean_from_dset(data, axis=None):
   """
-  """  
-  def setUp(self):
-    """
-    """
-    tf.reset_default_graph()
-  
-  @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_init(self):
-    """
-    """
-    print("\nTest 0: DKF initialization")
-    DeepKalmanFilter(input_dims=[[3]],
-                     rnn_state_dims=[[5]],
-                     ds_state_dim=[[4]])
-  
+  Compute mean of dataset
+  """
+  return np.mean(data, axis=axis)
 
-if __name__ == '__main__':
-  unittest.main(failfast=True)
+def compute_R2_from_sequences(data,
+                              preds,
+                              axis=None,
+                              start_bin=0):
+  """
+  R2 for a sequence
+  """
+  mean = np.mean(data[:,start_bin:], axis=axis, keepdims=True)
+  d = np.sum((data[:,start_bin:] - mean)**2, axis=axis)
+  n = np.sum((data[:,start_bin:] - preds[:,start_bin:])**2, axis=axis)
+  return 1.0 - n/d 

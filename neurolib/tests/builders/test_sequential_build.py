@@ -20,9 +20,10 @@ from neurolib.builders.sequential_builder import SequentialBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 7
-run_up_to_test = 7
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 6
+range_from = 0
+range_to = 6
+tests_to_run = list(range(range_from, range_to))
 
 class SequentialModelBuilderTest(tf.test.TestCase):
   """
@@ -49,16 +50,6 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     builder.addEvolutionSequence(3, num_inputs=2)
 
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
-  def test_DeclareModel2(self):
-    """
-    """
-    builder = SequentialBuilder(max_steps=10, scope="Basic")
-    
-    builder.addInputSequence(10)
-    builder.addEvolutionSequence(3, num_inputs=2)
-    builder.addOutputSequence()
-
-  @unittest.skipIf(3 not in tests_to_run, "Skipping")
   def test_DeclareModel3(self):
     """
     """
@@ -66,13 +57,11 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     
     in1 = builder.addInputSequence(10)
     enc1 = builder.addEvolutionSequence(3, num_inputs=2)
-    o1 = builder.addOutputSequence()
     
     print("in1, enc1", in1, enc1)
     builder.addDirectedLink(in1, enc1, islot=1)
-    builder.addDirectedLink(enc1, o1)
 
-  @unittest.skipIf(4 not in tests_to_run, "Skipping")
+  @unittest.skipIf(3 not in tests_to_run, "Skipping")
   def test_BuildModel1(self):
     """
     """
@@ -80,14 +69,15 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     
     in1 = builder.addInputSequence(10)
     enc1 = builder.addEvolutionSequence(3, num_inputs=2)
-    o1 = builder.addOutputSequence()
     
     builder.addDirectedLink(in1, enc1, islot=1)
-    builder.addDirectedLink(enc1, o1)
-    
     builder.build()
-
-  @unittest.skipIf(5 not in tests_to_run, "Skipping")
+    
+    enc1 = builder.nodes[enc1]
+    print("enc1._islot_to_itensor", enc1._islot_to_itensor)
+    print("enc1._oslot_to_otensor", enc1._oslot_to_otensor)
+    
+  @unittest.skipIf(4 not in tests_to_run, "Skipping")
   def test_BuildModel2(self):
     """
     """
@@ -96,39 +86,39 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     in1 = builder.addInputSequence(10)
     enc1 = builder.addEvolutionSequence(3, num_inputs=2)
     enc2 = builder.addEvolutionSequence(4, num_inputs=2)
-    o1 = builder.addOutputSequence()
     
     builder.addDirectedLink(in1, enc1, islot=1)
     builder.addDirectedLink(enc1, enc2, islot=1)
-    builder.addDirectedLink(enc2, o1)
-    
     builder.build()
     
-  @unittest.skipIf(6 not in tests_to_run, "Skipping")
+    enc1, enc2 = builder.nodes[enc1], builder.nodes[enc2]
+    print("enc1._islot_to_itensor", enc1._islot_to_itensor)
+    print("enc1._oslot_to_otensor", enc1._oslot_to_otensor)
+    print("enc2._islot_to_itensor", enc2._islot_to_itensor)
+    print("enc3._oslot_to_otensor", enc2._oslot_to_otensor)
+
+    
+  @unittest.skipIf(5 not in tests_to_run, "Skipping")
   def test_BuildModel3(self):
     """
     """
     builder = SequentialBuilder(max_steps=10,
                                 scope="Basic")
     
-    in1 = builder.addInputSequence(10)
+    in1 = builder.addInputSequence(6)
     enc1 = builder.addEvolutionSequence([[3],[3]], 
                                         num_inputs=3,
                                         cell_class='lstm')
     enc2 = builder.addInnerSequence(4, num_inputs=2)
-    o1 = builder.addOutputSequence()
     
     builder.addDirectedLink(in1, enc1, islot=2)
-    builder.addDirectedLink(in1, enc2)
+    builder.addDirectedLink(in1, enc2, islot=0)
     builder.addDirectedLink(enc1, enc2, islot=1)
-    builder.addDirectedLink(enc2, o1)
-    
     builder.build()
     
     e2 = builder.nodes[enc2]
-    self.assertEqual(e2._oslot_to_otensor[0].shape.as_list()[-1],
-                     4, "Error")
     print("e2._islot_to_itensor", e2._islot_to_itensor)
+    print("e2._oslot_to_otensor", e2._oslot_to_otensor)
 
     
 if __name__ == "__main__":

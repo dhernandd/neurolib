@@ -20,9 +20,10 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 9
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 2
+range_from = 0
+range_to = 2
+tests_to_run = list(range(range_from, range_to))
 
 class CallEncoderTest(tf.test.TestCase):
   """
@@ -41,18 +42,16 @@ class CallEncoderTest(tf.test.TestCase):
     builder = StaticBuilder(scope="Basic")
     in_name = builder.addInput(10)
     enc_name = builder.addInner(3)
-    out_name = builder.addOutput()
-    builder.addDirectedLink(in_name, enc_name)
-    builder.addDirectedLink(enc_name, out_name)
+    builder.addDirectedLink(in_name, enc_name, islot=0)
     
-    self.assertEqual(builder.num_nodes, 3, "The number of nodes has not been "
-                     "assigned correctly")
-    
+    self.assertEqual(builder.num_nodes, 2, "The number of nodes has not been "
+                     "assigned correctly")    
     builder.build()
 
     X = tf.placeholder(tf.float32, [1, 10], 'X')
     enc = builder.nodes[enc_name]
-    Y = enc([X])
+    Y = enc((X))
+    print('Y', Y)
     self.assertEqual(Y.shape[-1], 3, "")
     
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
@@ -68,20 +67,18 @@ class CallEncoderTest(tf.test.TestCase):
                                     name="Custom")
     cust_in1 = cust.addInner(3)
     cust_in2 = cust.addInner(4)
-    cust.addDirectedLink(cust_in1, cust_in2)
+    cust.addDirectedLink(cust_in1, cust_in2, islot=0)
 
     cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareOslot(oslot=0, innernode_name=cust_in2, inode_oslot=0)
-    cust.commit()
+    cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
      
     in1 = builder.addInput(10)
-    o1 = builder.addOutput()
-    builder.addDirectedLink(in1, cust)
-    builder.addDirectedLink(cust, o1)
+    builder.addDirectedLink(in1, cust, islot=0)
     builder.build()
     
     X = tf.placeholder(tf.float32, [1, 10], 'X')
-    Y, _ = cust([X])  # pylint: disable=unpacking-non-sequence
+    Y = cust(X)  # pylint: disable=unpacking-non-sequence
+    print('Y', Y)
     self.assertEqual(Y[0].shape[-1], 4, "")
     
     

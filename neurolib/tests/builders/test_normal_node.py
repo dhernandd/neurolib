@@ -15,7 +15,6 @@
 # ==============================================================================
 import unittest
 
-# import numpy as np
 import tensorflow as tf
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.normal import LDSNode, NormalPrecisionNode
@@ -43,9 +42,7 @@ class NormalNodeTest(tf.test.TestCase):
     builder = StaticBuilder(scope='Main')
     i1 = builder.addInput([[3]])
     in1 = builder.addInner([[3]], node_class=LDSNode)
-    o1 = builder.addOutput()
-    builder.addDirectedLink(i1, in1)
-    builder.addDirectedLink(in1, o1)
+    builder.addDirectedLink(i1, in1, islot=0)
     
     builder.build()
     
@@ -57,11 +54,10 @@ class NormalNodeTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=30,
                                 scope='Main')
     is1 = builder.addInputSequence([[3]])
-    ins2 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
-    os1 = builder.addOutputSequence()
-    builder.addDirectedLink(is1, ins2)
-    builder.addDirectedLink(ins2, os1)
-    
+    ins2 = builder.addInnerSequence([[3]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode)
+    builder.addDirectedLink(is1, ins2, islot=0)
     builder.build()
 
 

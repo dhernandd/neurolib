@@ -18,6 +18,7 @@ import tensorflow as tf
 from neurolib.encoder import _globals as dist_dict
 from neurolib.encoder.anode import ANode
 from abc import abstractmethod
+from neurolib.utils.directives import NodeDirectives
 
 # pylint: disable=bad-indentation, no-member
 
@@ -40,9 +41,9 @@ class InputNode(ANode):
   """
   num_expected_inputs = 0
   
-  dtype_dict = {'float32' : tf.float32,
-                'float64' : tf.float64,
-                'int32' : tf.int32}
+  type_dict = {'float32' : tf.float32,
+               'float64' : tf.float64,
+               'int32' : tf.int32}
 
   def __init__(self,
                builder,
@@ -64,28 +65,27 @@ class InputNode(ANode):
       is_sequence (bool): Is the input a sequence?
     """
     self.state_sizes = self.state_sizes_to_list(state_sizes)
+    
     super(InputNode, self).__init__(builder,
                                     is_sequence,
                                     name_prefix=name_prefix,
                                     **dirs)
-
-    # Slot names
-    self.oslot_to_name[0] = 'main_' + str(self.label) + '_0'
-    
-    # Deal with sequences
-    self.main_oshapes = self.get_state_full_shapes()
+    # directives object
+    self.directives = NodeDirectives(self.directives)
+    self.oslot_names = self.directives.output_names
+        
+    # shapes
+    self.oshapes = self._get_all_oshapes()
     self.D = self.get_state_size_ranks()
-    self._oslot_to_shape[0] = self.main_oshapes[0]
-    
-    # InputNode directives
-    self.dtype = self.dtype_dict[dirs.pop('dtype')]
+    self.xdim = self.state_sizes[0][0]
       
-  def _update_directives(self, **dirs):
+  def _update_directives(self, **directives):
     """
     Update this node directives
     """
-    self.directives = {'output_0_name' : 'main',}
-    self.directives.update(dirs)
+    this_node_dirs = {'outputname_0' : 'main'}
+    this_node_dirs.update(directives)
+    super(InputNode, self)._update_directives(**this_node_dirs)
     
   @abstractmethod
   def _build(self):
@@ -114,7 +114,6 @@ class PlaceholderInputNode(InputNode):
                builder,
                state_sizes,
                is_sequence=False,
-               dtype='float64',
                name=None,
                name_prefix='PhIn',
                **dirs):
@@ -137,16 +136,15 @@ class PlaceholderInputNode(InputNode):
           node.
     """
     name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
     super(PlaceholderInputNode, self).__init__(builder,
                                                state_sizes,
                                                is_sequence=is_sequence,
-                                               dtype=dtype,
                                                name_prefix=name_prefix,
                                                **dirs)
-
+    
+    # init list of free i/o slots
     self.free_oslots = list(range(self.num_expected_outputs))
-
-    self._update_directives(**dirs)
 
   def _update_directives(self, **dirs):
     """
@@ -154,29 +152,51 @@ class PlaceholderInputNode(InputNode):
     """
     this_node_dirs = {'dtype' : 'float64'}
     this_node_dirs.update(dirs)
-    
     super(PlaceholderInputNode, self)._update_directives(**this_node_dirs)
+
+  def _get_all_oshapes(self):
+    """
+    Declare the shapes for every output
+    """
+    bsz = self.batch_size
+    mx_stps = self.max_steps
+    const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
     
+    xdim = self.state_sizes[0][0]
+    return {self.oslot_names[0] : const_sh + [xdim]}
+    
+  def __call__(self, *inputs):
+    """
+    Call the InputNode
+    """
+    if inputs:
+      raise ValueError("A call an InputNode must have no arguments")
+    return self.get_outputs()
+    
+  def get_outputs(self, islot_to_itensor=None):
+    """
+    Evaluate the node on a dict of inputs. 
+    """
+    if islot_to_itensor is not None:
+      raise ValueError("`InputNode.get_outputs` must have no arguments")
+
+    # directives
+    dirs = self.directives
+    
+    oname = self.oslot_names[0]
+    dtype = self.type_dict[dirs.dtype]
+    oshape = self.oshapes[oname]
+    return tf.placeholder(dtype, shape=oshape)
+  
   def _build(self):
     """
     Build a PlaceholderInputNode.
     
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
-    name = self.name + '_' + self.directives['output_0_name']
-    out_shape, oslot = self.main_oshapes[0], 0
-    o0 = tf.placeholder(self.dtype, shape=out_shape, name=name)
-    o0_rname = self.name + ':' + self.directives['output_0_name']
-    self._oslot_to_otensor[oslot] = o0
-    self.builder.otensor_names[o0_rname] = o0.name
-    
+    output = self.get_outputs()
+    self.fill_oslot_with_tensor(0, output)
     self._is_built = True
-
-  def __call__(self, inputs, state):
-    """
-    Call the node with some inputs
-    """
-    InputNode.__call__(self, inputs, state)
 
 
 class NormalInputNode(InputNode):
@@ -224,100 +244,78 @@ class NormalInputNode(InputNode):
           node.
     """
     name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
     super(NormalInputNode, self).__init__(builder,
                                           state_sizes,
                                           is_sequence=is_sequence,
                                           dtype='float64',
                                           name_prefix=name_prefix,
                                           **dirs)
-    self.dist = None
-    self.xdim = self.state_sizes[0][0]
-    
-    if self.batch_size is None:
-      self.dummy_bsz = tf.placeholder(tf.int32, [None], self.name + '_dummy_bsz')
-      self.builder.dummies[self.dummy_bsz.name] = [None]
 
+    # Initialize list of free i/o slots
     self.free_oslots = list(range(self.num_expected_outputs))
-    
-    # Slot names
-    self.oslot_to_name[1] = 'loc_'  + str(self.label) + '_1'
-    self.oslot_to_name[2] = 'scale_' + str(self.label) + '_2'
 
-    self._update_directives(**dirs)
+    # Get the dummy batch size
+    if self.batch_size is None:
+      self.dummy_bsz = self.builder.dummy_bsz
     
-    self._declare_secondary_outputs()
+    self.dist = None
 
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
-    this_node_dirs = {'output_1_name' : 'loc',
-                      'output_2_name' : 'scale'}
+    this_node_dirs = {'outputname_1' : 'loc',
+                      'outputname_2' : 'scale'}
     this_node_dirs.update(dirs)
-    
     super(NormalInputNode, self)._update_directives(**this_node_dirs)
-        
-  def _declare_secondary_outputs(self):
-    """
-    Declare the statistics of the normal as secondary outputs. 
-    """
-    oshape = self.main_oshapes[0]
-    
-    add_name = lambda x : self.name + '_' + x
-    self._oslot_to_shape[1] = oshape[1:] # mean oslot
-    o1 = self.builder.addOutput(name=add_name(self.directives['output_1_name']))
-    self.builder.addDirectedLink(self, o1, oslot=1)
-    
-    self._oslot_to_shape[2] = oshape[1:] + [oshape[-1]] # stddev oslot  
-    o2 = self.builder.addOutput(name=add_name(self.directives['output_2_name']))
-    self.builder.addDirectedLink(self, o2, oslot=2)
   
-  def _get_sample(self):
+  def _get_all_oshapes(self):
     """
-    Get a sample from the distribution.
+    Declare the shapes for every output
     """
-    sample = self.dist.sample(sample_shape=self.dummy_bsz)
-    sample.set_shape([None, self.xdim])
-    return sample
-  
-  def __call__(self):
-    """
-    Return a sample from the distribution
-    """
-    return self._get_sample()
-  
-  def _build(self):
-    """
-    Build a NormalInputNode.
+    bsz = self.batch_size
+    mx_stps = self.max_steps
+    const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
     
-    Assign a sample from self.dist to _oslot_to_otensor[0]
-     
-    Assign the mean from self.dist to _oslot_to_otensor[1]
-    
-    Assign the Cholesky decomposition of the covariance from self.dist to
-    _oslot_to_otensor[2]
+    xdim = self.state_sizes[0][0]
+    return {self.oslot_names[0] : const_sh + [xdim],
+            self.oslot_names[1] : const_sh + [xdim],
+            self.oslot_names[2] : const_sh + [xdim, xdim]}
+  
+  def __call__(self, *inputs):
     """
+    Evaluate the node on a list of inputs.    
+    """
+    if inputs:
+      raise ValueError("A call an InputNode must have no arguments")
+    return self.get_outputs()
+  
+  def get_outputs(self, islot_to_itensor=None):
+    """
+    Evaluate the node on a dict of inputs.
+    """
+    if islot_to_itensor is not None:
+      raise ValueError("`InputNode.get_outputs` must have no arguments")
+
+    # directives
+    dirs = self.directives
+    dtype = self.type_dict[dirs.dtype]
+    
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       if self.is_sequence and self.max_steps is None:
-        loc = tf.get_variable('loc',
-                              dtype=self.dtype,
-                              initializer=self.loc_init,
-                              validate_shape=True)
-        scale = tf.get_variable('scale',
-                                dtype=self.dtype,
-                                initializer=self.sc_init,
-                                validate_shape=True)
+        raise NotImplementedError("")
       else:
-        li = tf.zeros([self.xdim], dtype=self.dtype)
+        li = tf.zeros([self.xdim], dtype=dtype)
         loc_dist = tf.get_variable('loc',
-                                   dtype=self.dtype,
+                                   dtype=dtype,
                                    initializer=li)
         loc = tf.tile(loc_dist, self.dummy_bsz)
         loc = tf.reshape(loc, [-1, self.xdim])
         
-        si = tf.eye(self.xdim, dtype=self.dtype)
+        si = tf.eye(self.xdim, dtype=dtype)
         scale = tf.get_variable('scale',
-                                dtype=self.dtype,
+                                dtype=dtype,
                                 initializer=si)
         scale_dist = tf.linalg.LinearOperatorFullMatrix(scale)
         scale = tf.reshape(scale, [-1])
@@ -326,23 +324,22 @@ class NormalInputNode(InputNode):
     
     self.dist = dist = dist_dict['MultivariateNormalLinearOperator'](loc=loc_dist,
                                                                      scale=scale_dist)
-    
     samp = dist.sample(sample_shape=self.dummy_bsz)
     if not self.is_sequence:
-      samp.set_shape([None, self.xdim])
-    o0_name = self.name + '_' + self.directives['output_0_name']
-    self._oslot_to_otensor[0] = tf.identity(samp, name=o0_name)
+      samp.set_shape([None, self.xdim]) # set the known shape
+      
+    return samp, loc, scale
+
+  def _build(self):
+    """
+    Build the NormalInputNode
+    """
+    samp, loc, scale = self.get_outputs()
     
-    o1_name = self.name + '_' + self.directives['output_1_name']
-    self._oslot_to_otensor[1] = tf.identity(loc, name=o1_name)
-    print("self._oslot_to_otensor[1]", self._oslot_to_otensor[1])
-    
-    o2_name = self.name + '_' + self.directives['output_2_name']
-    self._oslot_to_otensor[2] = tf.identity(scale, name=o2_name)
+    # Fill the oslots
+    self.fill_oslot_with_tensor(0, samp)
+    self.fill_oslot_with_tensor(1, loc)
+    self.fill_oslot_with_tensor(2, scale)
 
     self._is_built = True
-
-
-if __name__ == '__main__':
-  print(dist_dict.keys())  # @UndefinedVariable
   

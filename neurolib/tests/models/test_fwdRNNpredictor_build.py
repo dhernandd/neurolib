@@ -21,9 +21,10 @@ from neurolib.models.predictor_rnn import PredictorRNN
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-NUM_TESTS = 2
-run_up_to_test = 2
-tests_to_run = list(range(run_up_to_test))
+# NUM_TESTS : 1
+range_from = 0
+range_to = 1
+tests_to_run = list(range(range_from, range_to))
 
 class RNNClassifierBuildTest(tf.test.TestCase):
   """
@@ -34,23 +35,17 @@ class RNNClassifierBuildTest(tf.test.TestCase):
     """
     tf.reset_default_graph()
 
-  @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_init(self):
-    """
-    Test initialization
-    """
-    print("\nTest 0: RNNClassifier Initialization")
-    PredictorRNN(input_dims=1, state_dims=3, output_dims=1)
-
-  @unittest.skipIf(1 not in tests_to_run, "Skipping")    
+  @unittest.skipIf(0 not in tests_to_run, "Skipping")    
   def test_build(self):
     """
     Test build
     """
     print("\nTest 1: RNNClassifier build")
-    model = PredictorRNN(input_dims=1, state_dims=3, output_dims=1)
-    model.build()
+    PredictorRNN(input_dims=1,
+                 state_dims=3,
+                 output_dims=1)
     
 
 if __name__ == '__main__':
-  unittest.main(failfast=True) 
+  unittest.main(failfast=True)
+  

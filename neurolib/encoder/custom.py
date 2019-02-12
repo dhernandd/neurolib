@@ -13,11 +13,9 @@
 # limitations under the License.
 #
 # ==============================================================================
-from bidict import bidict
-from collections import defaultdict
-
-from neurolib.encoder.basic import InnerNode
+from neurolib.encoder.inner import InnerNode
 from neurolib.encoder.deterministic import DeterministicNNNode  # @UnusedImport
+from neurolib.utils.directives import NodeDirectives
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -44,7 +42,8 @@ class CustomNode(InnerNode):
                num_outputs,
                is_sequence=False,
                name=None,
-               name_prefix='Cust'):
+               name_prefix='Cust',
+               **dirs):
     """
     Initialize a CustomNode
     
@@ -63,53 +62,46 @@ class CustomNode(InnerNode):
         
         name (str) :
     """
+    # set name
     name_prefix = name_prefix or 'Cust'
     name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     
     super(CustomNode, self).__init__(out_builder,
                                      is_sequence,
-                                     name_prefix=name_prefix)
+                                     name_prefix=name_prefix,
+                                     **dirs)
     
+    # number of inputs/outputs
     self.num_expected_inputs = num_inputs
     self.num_expected_outputs = num_outputs
+    
+    # directives object
+    self.directives = NodeDirectives(self.directives)
+    self.oslot_names = self.directives.output_names
 
+    # inner builder
     self.in_builder = in_builder
     self.nodes = in_builder.nodes
 
-    self._innernode_to_its_avlble_islots = {}
-    self._innernode_to_its_avlble_oslots = {}
-    self._islot_to_inner_node_islot = defaultdict(list)
-    self._oslot_to_inner_node_oslot = bidict()
-    
-    self._is_committed = False
     self._is_built = False
     
+    # init list of free i/o slots
+    self._islot_to_itensor = [{} for _ in range(self.num_expected_inputs)]
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
-  def declareIslot(self, islot=None, innernode_name=None, inode_islot=None):
+  def _update_directives(self, **directives):
     """
-    Declare an inner islot as an input to the CustomNode
     """
-    if any(elem is None for elem in [islot, innernode_name, inode_islot]):
-      raise ValueError("Missing argument")
-    node = self.in_builder.nodes[innernode_name]
-    self.in_builder.input_nodes[innernode_name] = node 
-    self._islot_to_inner_node_islot[islot].append((innernode_name, inode_islot)) 
-  
-  def declareOslot(self, oslot=None, innernode_name=None, inode_oslot=None):
-    """
-    Declare an inner oslot as an output to the CustomNode 
-    """
-    if any(elem is None for elem in [oslot, innernode_name, inode_oslot]):
-      raise ValueError("Missing argument")
-
-    self._oslot_to_inner_node_oslot[oslot] = (innernode_name, inode_oslot)
+    this_node_dirs = {}
+    this_node_dirs.update(directives)
+    super(CustomNode, self)._update_directives(**this_node_dirs)
     
-    node = self.in_builder.nodes[innernode_name]
-    self.in_builder.output_nodes[innernode_name] = node
-     
-    self._oslot_to_shape[oslot] = node.get_oslot_shape(inode_oslot)
+  def _get_all_oshapes(self):
+    """
+    TODO!
+    """
+    pass
     
   def addInner(self, 
                state_sizes,
@@ -120,21 +112,39 @@ class CustomNode(InnerNode):
     """
     Add an InnerNode to the CustomNode
     """
-    node_name = self.in_builder.addInner(state_sizes,
+    in_builder = self.in_builder
+    node_name = in_builder.addInner(state_sizes,
                                          num_inputs=num_inputs,
                                          node_class=node_class,
                                          is_sequence=False,
                                          name=name,
                                          **dirs)
-    node = self.in_builder.nodes[node_name]
+    node = in_builder.nodes[node_name]
     
     # Assumes fixed number of expected_inputs
-    self._innernode_to_its_avlble_islots[node_name] = node.free_islots
-    self._innernode_to_its_avlble_oslots[node_name] = node.free_oslots
+    in_builder._innernode_to_its_avlble_islots[node_name] = node.free_islots
+    in_builder._innernode_to_its_avlble_oslots[node_name] = node.free_oslots
     
     return node.name
+  
+  def declareIslot(self, islot, innernode_name, inode_islot):
+    """
+    Declare an inner islot as an input to the CustomNode
+    """
+    in_builder = self.in_builder
+    in_builder._islot_to_inner_node_islot[islot].append((innernode_name, inode_islot)) 
+  
+  def declareOslot(self, oslot, innernode_name, inode_oslot):
+    """
+    Declare an inner oslot as an output to the CustomNode 
+    """
+    in_builder = self.in_builder
     
-  def addDirectedLink(self, enc1, enc2, islot=0, oslot=0):
+    node = in_builder.nodes[innernode_name]
+    in_builder.output_nodes[innernode_name] = node 
+    in_builder._oslot_to_inner_node_oslot[oslot] = (innernode_name, inode_oslot)
+    
+  def addDirectedLink(self, enc1, enc2, islot):
     """
     Add a DirectedLink to the CustomNode inner graph
     """
@@ -143,7 +153,7 @@ class CustomNode(InnerNode):
     if isinstance(enc2, str):
       enc2 = self.in_builder.nodes[enc2]
     
-    self.in_builder.addDirectedLink(enc1, enc2, islot=islot, oslot=oslot)
+    self.in_builder.addDirectedLink(enc1, enc2, islot=islot)
     
   @property
   def dist(self):
@@ -151,8 +161,10 @@ class CustomNode(InnerNode):
     If self has only one OutputNode `onode` and it is a distribution, make
     `self.dist = onode.dist`. Otherwise, raise AttributeError
     """
+    in_builder = self.in_builder
     if self.num_expected_outputs == 1:
-      inner_onode_name = self._oslot_to_inner_node_oslot[0][0]
+      print("self._oslot_to_inner_node_oslot", in_builder._oslot_to_inner_node_oslot)
+      inner_onode_name = in_builder._oslot_to_inner_node_oslot['main'][0]
       inner_onode = self.in_builder.nodes[inner_onode_name]
       try:
         return inner_onode.dist
@@ -162,93 +174,46 @@ class CustomNode(InnerNode):
       raise AttributeError("`dist` attribute not defined for CustomNodes "
                            "with self.num_outputs > 1")
     
-  def _get_output(self, inputs=None, islot_to_itensor=None, name=None):
+  def __call__(self, *inputs):
+    """
+    Call the CustomNode
+    """
+    if not inputs:
+      raise ValueError("Inputs are mandatory for the CustomNode")
+    print("cust, inputs", inputs)
+    islot_to_itensor = [{'main' : ipt} for ipt in inputs]
+    return self.get_outputs(islot_to_itensor)
+
+  def get_outputs(self, islot_to_itensor=None):
     """
     Get a sample from the CustomNode
     """
-    num_outputs = self.num_expected_outputs
-    rslt, rslt_dict = self.in_builder.build_output(inputs, islot_to_itensor, self, name)
-    for i in range(num_outputs):
-      onode_name, oslot = self._oslot_to_inner_node_oslot[i]
-      onode = self.in_builder.nodes[onode_name]
-      self._oslot_to_otensor[i] = onode.get_output(oslot)
-
-    return rslt, rslt_dict
-  
-  def commit(self):
-    """
-    Prepare the CustomNode for building.
+    if islot_to_itensor is not None:
+      _input = islot_to_itensor
+    else:
+      _input = self._islot_to_itensor
     
-    In particular fill, the dictionaries 
-      _islot_to_inner_node_islot ~ {inode_islot : (inner_node, inner_node_islot)}
-      _oslot_to_inner_node_oslot ~ {inode_oslot : (inner_node, inner_node_oslot)}
-  
-    Stage A: If an InnerNode of the CustomNode has an available inode_islot, then this
-    is an input to the CustomNode.
-    """
-    print('BEGIN COMMIT')
-    # Stage A
-    self.in_builder.input_nodes = {name : node for name, node in
-                  self.in_builder.input_nodes.items() if not node._built_parents}
-      
-    for innernode_name, islot_list in self._innernode_to_its_avlble_islots.items():
-      if islot_list:
-        for inode_islot in islot_list:
-          if not any([(innernode_name, inode_islot) in elem for elem
-                      in self._islot_to_inner_node_islot.values()]):
-            raise ValueError("({}, {}) not in "
-                      "self._islot_to_inner_node_islot.values():".format(innernode_name,
-                                                                         inode_islot))
-        
-#   Stage B
-    for innernode_name, oslot_list in self._innernode_to_its_avlble_oslots.items():
-      if oslot_list:
-        for inode_oslot in oslot_list:
-          if (innernode_name, inode_oslot) not in self._oslot_to_inner_node_oslot.values():
-            raise ValueError("({}, {}) not in "
-                      "self._oslot_to_inner_node_oslot.values():".format(innernode_name,
-                                                                         inode_oslot))
+    print("cust; self.oslot_names", self.oslot_names)
+    result = self.in_builder.build_outputs(_input,
+                                           self.oslot_names)
+    return result
 
-    self._is_committed = True
-    print('END COMMIT')
-
-  def __call__(self, inputs=None, islot_to_itensor=None):
-    """
-    """
-    return self._get_output(inputs, islot_to_itensor)
-  
   def _build(self):
     """
-    Build the CustomNode
-    """
-    print("\nBEGIN CUSTOM BUILD")
+    Build the Custom Node
+    """    
+    # Fill Custom Node oslots
+    rslt = self.get_outputs()
+    
+    for oslot, tensor in enumerate(rslt):
+      self.fill_oslot_with_tensor(oslot, tensor)
+    self._is_built = True 
 
-    num_outputs = self.num_expected_outputs
-    if self.num_declared_outputs != num_outputs:
-      raise ValueError("`self.num_declared_outputs != self.num_expected_outputs`",
-                       (self.num_declared_outputs, self.num_expected_outputs))
-    
-    self.in_builder.build()
-    for i in range(num_outputs):
-      onode_name, oslot = self._oslot_to_inner_node_oslot[i]
-      onode = self.in_builder.nodes[onode_name]
-      self._oslot_to_otensor[i] = onode.get_output(oslot)
-    
-    output = self._oslot_to_otensor
-    self._is_built = True
-    print("END CUSTOM BUILD\n")
-
-    return list(zip(*sorted(output.items())))[1]
-    
-  def get_node(self, label):
-    """
-    """
-    return self.in_builder.nodes[label]
-  
   def entropy(self):
     """
     Get the CustomNode entropy
     """
+    print("self.dist", self.dist)
     try:
       return self.dist.entropy()
     except AttributeError:

@@ -49,8 +49,7 @@ class MergeEvSeqsFLDSTest(tf.test.TestCase):
     evs1 = builder.addEvolutionSequence([[3]],
                                         num_inputs=1,
                                         cell_class=LDSCell)
-    builder.addMergeNode([[3]],
-                         node_dict={'in_seq' : ins1, 'ev_seq' : evs1},
+    builder.addMergeNode(node_list=[ins1, evs1],
                          merge_class=MergeSeqsNormalLDSEv)
 
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
@@ -61,22 +60,21 @@ class MergeEvSeqsFLDSTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=30,
                                 scope='Main')
     is1 = builder.addInputSequence([[3]])
-    ins1 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
+    ins1 = builder.addInnerSequence([[3]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode)
     evs1 = builder.addEvolutionSequence([[3]],
                                         num_inputs=1,
                                         cell_class=LDSCell)
-    m1 = builder.addMergeNode([[3]],
-                              node_dict={'in_seq' : ins1, 'ev_seq' : evs1},
+    m1 = builder.addMergeNode(node_list=[ins1, evs1],
                               merge_class=MergeSeqsNormalLDSEv)
-    ins2 = builder.addInnerSequence([[3]], num_inputs=1, node_class=NormalPrecisionNode)
-    os1 = builder.addOutputSequence()
-    builder.addDirectedLink(is1, ins1)
-    builder.addDirectedLink(m1, ins2)
-    builder.addDirectedLink(ins2, os1)
+    ins2 = builder.addInnerSequence([[3]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode)
+    builder.addDirectedLink(is1, ins1, islot=0)
+    builder.addDirectedLink(m1, ins2, islot=0)
     
     builder.build()
-    ent = builder.nodes[m1].entropy()
-    print(ent)
 
 
 if __name__ == "__main__":

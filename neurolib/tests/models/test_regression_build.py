@@ -21,9 +21,9 @@ from neurolib.models.regression import Regression
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 2
+# NUM_TESTS : 1
 range_from = 0
-range_to = 2
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
 class RegressionFullTest(tf.test.TestCase):
@@ -43,16 +43,6 @@ class RegressionFullTest(tf.test.TestCase):
     print("\nTest 0: Regression initialization")
     Regression(input_dim=10,
                output_dim=1)
-
-  @unittest.skipIf(1 not in tests_to_run, "Skipping")
-  def test_build(self):
-    """
-    Test build
-    """
-    print("\nTest 1: Regression build")
-    model = Regression(input_dim=10,
-                       output_dim=1)
-    model.build()
 
 
 if __name__ == '__main__':
