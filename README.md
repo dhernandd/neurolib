@@ -1,5 +1,7 @@
 ## Neurolib
 
+Website: https://cunningham-lab.github.io/neurolib/ (in construction
+
 ### A machine learning library for neuroscientists
 
 ## Requirements
