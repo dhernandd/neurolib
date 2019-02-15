@@ -37,7 +37,7 @@ for dist_name in sorted(dir(_distributions)):
 
     del _candidate
 
-__all__ = ["MultivariateNormalTriL"]  #pylint: disable=undefined-all-variable
+# __all__ = ["MultivariateNormalTriL"]  #pylint: disable=undefined-all-variable
 
 act_fn_dict = {'relu' : tf.nn.relu,
                'leaky_relu' : tf.nn.leaky_relu,

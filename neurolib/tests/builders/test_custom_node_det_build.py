@@ -81,7 +81,7 @@ class CustomEncoderBuilderBasicTest(tf.test.TestCase):
     cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
     
     ipt = [{'main' : tf.placeholder(tf.float64, [1, 3])}]
-    rslt = cust.get_outputs(ipt)
+    rslt = cust.build_outputs(ipt)
     print("rslt", rslt)
       
   @unittest.skipIf(3 not in tests_to_run, "Skipping")

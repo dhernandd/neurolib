@@ -14,6 +14,7 @@
 #
 # ==============================================================================
 import unittest
+
 import tensorflow as tf
 
 from neurolib.builders.static_builder import StaticBuilder
@@ -72,13 +73,17 @@ class MergeNormalsTest(tf.test.TestCase):
     Test Merge Node build
     """
     builder = StaticBuilder(scope='Main')
-    i1 = builder.addInput([[3]], iclass=NormalInputNode)
-    i2 = builder.addInput([[3]], iclass=NormalInputNode)
+    i1 = builder.addInput([[3]], iclass=NormalInputNode, name='N1')
+    i2 = builder.addInput([[3]], iclass=NormalInputNode, name='N2')
     m1 = builder.addMergeNode(node_list=[i1, i2],
                               merge_class=MergeNormals)
     builder.build()
     
-    s3 = builder.eval_node_oslot(m1, oslot='cov')
+    sess = tf.Session(graph=tf.get_default_graph())
+    sess.run(tf.global_variables_initializer())
+    
+    s3 = builder.eval_node_oslot(sess, m1,
+                                 oslot='cov')
     print("merge output", s3)
     print("merge output shape", s3.shape)
     

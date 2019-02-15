@@ -17,12 +17,13 @@ import unittest
 import tensorflow as tf
 
 from neurolib.builders.sequential_builder import SequentialBuilder
+from neurolib.encoder.seq_cells import LDSCell, LLDSCell
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 6
 range_from = 0
-range_to = 6
+range_to = 7
 tests_to_run = list(range(range_from, range_to))
 
 class SequentialModelBuilderTest(tf.test.TestCase):
@@ -120,6 +121,43 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     print("e2._islot_to_itensor", e2._islot_to_itensor)
     print("e2._oslot_to_otensor", e2._oslot_to_otensor)
 
+     
+  @unittest.skipIf(6 not in tests_to_run, "Skipping")
+  def test_lds_cell_build(self):
+    """
+    """
+    scope = "Main"
+    max_steps = 25
+ 
+    builder = SequentialBuilder(max_steps=max_steps,
+                                scope=scope)
+    ev1 = builder.addEvolutionSequence([[3]],
+                                       num_inputs=1,
+                                       cell_class=LDSCell)
+    builder.build()
+    
+    ev1 = builder.nodes[ev1]
+    print("ev1._islot_to_itensor", ev1._islot_to_itensor)
+    print("ev1._oslot_to_otensor", ev1._oslot_to_otensor)
+     
+  @unittest.skipIf(7 not in tests_to_run, "Skipping")
+  def test_llds_cell_build(self):
+    """
+    """
+    scope = "Main"
+    max_steps = 25
+ 
+    builder = SequentialBuilder(max_steps=max_steps,
+                                scope=scope)
+    ev1 = builder.addEvolutionSequence([[3]],
+                                       num_inputs=1,
+                                       cell_class=LLDSCell)
+    builder.build()
+    
+    ev1 = builder.nodes[ev1]
+    print("ev1._islot_to_itensor", ev1._islot_to_itensor)
+    print("ev1._oslot_to_otensor", ev1._oslot_to_otensor)
+     
     
 if __name__ == "__main__":
   unittest.main(failfast=True)

@@ -171,14 +171,14 @@ class PlaceholderInputNode(InputNode):
     """
     if inputs:
       raise ValueError("A call an InputNode must have no arguments")
-    return self.get_outputs()
+    return self.build_outputs()
     
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Evaluate the node on a dict of inputs. 
     """
     if islot_to_itensor is not None:
-      raise ValueError("`InputNode.get_outputs` must have no arguments")
+      raise ValueError("`InputNode.build_outputs` must have no arguments")
 
     # directives
     dirs = self.directives
@@ -194,7 +194,8 @@ class PlaceholderInputNode(InputNode):
     
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
-    output = self.get_outputs()
+    output = self.build_outputs()
+#     with tf.variable_scope(self.name):
     self.fill_oslot_with_tensor(0, output)
     self._is_built = True
 
@@ -289,14 +290,14 @@ class NormalInputNode(InputNode):
     """
     if inputs:
       raise ValueError("A call an InputNode must have no arguments")
-    return self.get_outputs()
+    return self.build_outputs()
   
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Evaluate the node on a dict of inputs.
     """
     if islot_to_itensor is not None:
-      raise ValueError("`InputNode.get_outputs` must have no arguments")
+      raise ValueError("`InputNode.build_outputs` must have no arguments")
 
     # directives
     dirs = self.directives
@@ -334,7 +335,7 @@ class NormalInputNode(InputNode):
     """
     Build the NormalInputNode
     """
-    samp, loc, scale = self.get_outputs()
+    samp, loc, scale = self.build_outputs()
     
     # Fill the oslots
     self.fill_oslot_with_tensor(0, samp)

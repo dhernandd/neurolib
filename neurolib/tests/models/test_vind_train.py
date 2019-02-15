@@ -13,11 +13,14 @@
 # limitations under the License.
 #
 # ==============================================================================
+import os
+path = os.path.dirname(os.path.realpath(__file__))
 import unittest
+import pickle
 
 import tensorflow as tf
 
-from neurolib.models.flds import fLDS
+from neurolib.models.vind import VIND
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -26,7 +29,12 @@ range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
-class FLDSTestBuild(tf.test.TestCase):
+fname = '/datadict_gaussianobs2D'
+with open(path + fname, 'rb') as f:
+  datadict = pickle.load(f)
+
+
+class VINDTestTrain(tf.test.TestCase):
   """
   """  
   def setUp(self):
@@ -35,13 +43,25 @@ class FLDSTestBuild(tf.test.TestCase):
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_init(self):
+  def test_train(self):
     """
     """
-    print("\nTest 0: fLDS initialization")
-    fLDS(input_dims=[[10]],
-         state_dim=[[3]])
-  
+    print("\nTest 1: fLDS build")
+
+    dataset = {}
+    Ytrain = datadict['Ytrain']
+    Yshape = Ytrain.shape
+    print("Yshape", Yshape)
+    dataset['train_Observation'] = Ytrain
+    dataset['valid_Observation'] = datadict['Yvalid']
+    max_steps, input_dims = Yshape[-2], Yshape[-1]
+      
+    vind = VIND(input_dims=input_dims,
+                state_dim=[[2]],
+                max_steps=max_steps,
+                save_on_valid_improvement=False)
+    vind.train(dataset, num_epochs=10)
+    
 
 if __name__ == '__main__':
   unittest.main(failfast=True)

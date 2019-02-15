@@ -95,6 +95,10 @@ class RNNEvolutionSequence(InnerNode):
     # Add init_inode_names and the init_inode_names -> ev_seq edge
     self._declare_init_states()
     
+    # declare state sequence
+    if isinstance(self.cell, CustomCell):
+      self._declare_state_sequence()
+    
     # Add a dummy placeholder for the batch size if it cannot be deduced
     if self.num_input_seqs == 0:
       self.dummy_bsz = self.builder.dummy_bsz
@@ -184,7 +188,6 @@ class RNNEvolutionSequence(InnerNode):
       for islot, name in enumerate(self.init_inode_names):
         init_inode = builder.nodes[name]
         builder.addDirectedLink(init_inode, self, islot=islot)
-#         self.init_inodes.append(init_inode)
     except AttributeError:
       # Otherwise, it must be a tensorflow cell
       self.init_inodes = []
@@ -193,6 +196,13 @@ class RNNEvolutionSequence(InnerNode):
         builder.addDirectedLink(init_inode_name, self, islot=islot)
 #         self.init_inodes.append(builder.nodes[init_inode_name])
         self.init_inodes.append(init_inode_name)
+    
+  def _declare_state_sequence(self):
+    """
+    Declare state sequence
+    """
+    for i, state in enumerate(self.state_sizes):
+      self.builder.addInputSequence([state], name="StateInSeq"+str(i))
     
   def _check_dims_default_rnns(self, cclass):
     """
@@ -243,7 +253,7 @@ class RNNEvolutionSequence(InnerNode):
     if not inputs:
       raise ValueError("Inputs are mandatory for the DeterministicNNNode")
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
 
   @staticmethod
   def concat_input_series(islot_to_itensor, start_from=0):
@@ -253,7 +263,7 @@ class RNNEvolutionSequence(InnerNode):
     input_series = [elem['main'] for elem in islot_to_itensor[start_from:]]
     return tf.concat(input_series, axis=-1)
 
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get the Evolution Sequence outputs
     """
@@ -265,21 +275,21 @@ class RNNEvolutionSequence(InnerNode):
     cell = self.cell
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       init_states = self.get_init_state_tuple(_input)
-      print("evseq; init_states", init_states)
+#       print("evseq; init_states", init_states)
       if self.num_input_seqs > 0:
         inputs_series = self.concat_input_series(_input, start_from=self.num_states)
       else:
         inputs_series = self.dummy_input_series
-      print("evseq; inputs_series", inputs_series)
-      print("evseq; init_states", init_states)
+#       print("evseq; inputs_series", inputs_series)
+#       print("evseq; init_states", init_states)
       states_series, _ = tf.nn.dynamic_rnn(cell,
                                            inputs_series,
                                            initial_state=init_states)
-      print("evseq; states_series", states_series)
+#       print("evseq; states_series", states_series)
       
     return states_series
   
-  def get_outputs_winit(self):
+  def build_outputs_winit(self):
     """
     """
     i_to_itensor = []
@@ -291,14 +301,14 @@ class RNNEvolutionSequence(InnerNode):
     for i in range(self.num_states, self.num_expected_inputs):
       i_to_itensor.append(self._islot_to_itensor[i])
     
-    return self.get_outputs(i_to_itensor)
+    return self.build_outputs(i_to_itensor)
   
   def _build(self):
     """
     Build the Evolution Sequence
     """
-    states_series = self.get_outputs()
-    states_series_winit = self.get_outputs_winit()
+    states_series = self.build_outputs()
+    states_series_winit = self.build_outputs_winit()
     print("evseq; states_series_winit", states_series_winit)
 
     if self.num_expected_outputs == 1 or self.cclass_name == 'lstm':
@@ -308,7 +318,7 @@ class RNNEvolutionSequence(InnerNode):
     else:
       for oslot, state in enumerate(states_series):
         name_init = self.oslot_names[oslot] + '_winit'
-        if isinstance(state, list): # hideous hack  due to inconsistent cell behaviour. Keep for now
+        if isinstance(state, list): # hideous, due to inconsistent cell behaviour. Keep for now
           self.fill_oslot_with_tensor(oslot, state[0])
           self.fill_oslot_with_tensor(oslot+self.num_states,
                                       states_series_winit[oslot][0],
@@ -318,10 +328,23 @@ class RNNEvolutionSequence(InnerNode):
           self.fill_oslot_with_tensor(oslot+self.num_states,
                                       states_series_winit[oslot],
                                       name=name_init)
+      for oslot in range(len(states_series), self.num_expected_outputs):
+        oname = self.oslot_names[oslot]
+        tensor, _ = self.cell.build_output(oname) # build_output returns a tuple
+        self.fill_oslot_with_tensor(oslot, tensor)
           
-    
     self._is_built = True
     
+  def _build_model_outputs(self):
+    """
+    """
+    model_outputs = self.cell.model_outputs
+    for item in model_outputs:
+      oname = item[0]
+      _inputs = self.get_model_inputs(item[1])
+      output, _ = self.cell.encoder.build_output(oname, _inputs)
+      self.builder.add_to_output_names(item[2], output)
+      
 
 class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
   """
@@ -473,7 +496,7 @@ class NonlinearDynamicswGaussianNoise(RNNEvolutionSequence):
 #     """
 #     raise NotImplementedError("")
 #   
-#   def get_outputs(self, islot_to_itensor=None):
+#   def build_outputs(self, islot_to_itensor=None):
 #     """
 #     """
 #     raise NotImplementedError("")

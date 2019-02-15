@@ -17,9 +17,9 @@ import unittest
 import tensorflow as tf
 
 from neurolib.builders.sequential_builder import SequentialBuilder
-from neurolib.encoder.normal import NormalPrecisionNode
-from neurolib.encoder.seq_cells import LDSCell
-from neurolib.encoder.merge import MergeSeqsNormalLDSEv
+from neurolib.encoder.normal import NormalPrecisionNode, LDSNode
+from neurolib.encoder.merge import MergeSeqsNormalwNormalEv
+from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -28,7 +28,7 @@ run_from = 0
 run_to = 2
 tests_to_run = list(range(run_from, run_to))
 
-class MergeEvSeqsFLDSTest(tf.test.TestCase):
+class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
   """
   """
   def setUp(self):
@@ -36,43 +36,69 @@ class MergeEvSeqsFLDSTest(tf.test.TestCase):
     """
     tf.reset_default_graph()
   
-  @unittest.skipIf(0 not in tests_to_run, "Skipping")
-  def test_merge_init(self):
+  def test_mergeNormalEvSeqs(self):
     """
-    Test Merge Node initialization
     """
-    builder = SequentialBuilder(max_steps=30,
-                                scope='Main')
-    ins1 = builder.addInnerSequence([[3]],
+    ydim = 10
+    xdim = 2
+    
+    builder = SequentialBuilder(scope='Main',max_steps=25) 
+    is1 = builder.addInputSequence([[ydim]], name='Observation')
+    is2 = builder.addInputSequence([[xdim]], name='State')
+    n1 = builder.addInput([[xdim]],
+                          NormalInputNode,
+                          name='Prior')
+    ins1 = builder.addInnerSequence([[xdim]],
                                     num_inputs=1,
-                                    node_class=NormalPrecisionNode)
-    evs1 = builder.addEvolutionSequence([[3]],
-                                        num_inputs=1,
-                                        cell_class=LDSCell)
-    builder.addMergeNode(node_list=[ins1, evs1],
-                         merge_class=MergeSeqsNormalLDSEv)
+                                    node_class=NormalPrecisionNode,
+                                    name='InnSeq')
+    evs1 = builder.addInnerSequence([[xdim]],
+                                    num_inputs=1,
+                                    node_class=LDSNode,
+                                    name='LDS')
+    m1 = builder.addMergeNode(node_list=[ins1, evs1, n1],
+                              merge_class=MergeSeqsNormalwNormalEv,
+                              name='Recognition')
+    ins2 = builder.addInnerSequence([[ydim]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode,
+                                    name='Generative')
+    builder.addDirectedLink(is1, ins1, islot=0)
+    builder.addDirectedLink(is2, evs1, islot=0)
+    builder.addDirectedLink(m1, ins2, islot=0)
 
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_merge_build(self):
     """
     Test Merge Node Build
     """
-    builder = SequentialBuilder(max_steps=30,
-                                scope='Main')
-    is1 = builder.addInputSequence([[3]])
-    ins1 = builder.addInnerSequence([[3]],
+    ydim = 10
+    xdim = 2
+    
+    builder = SequentialBuilder(scope='Main',max_steps=25) 
+    is1 = builder.addInputSequence([[ydim]], name='Observation')
+    is2 = builder.addInputSequence([[xdim]], name='State')
+    n1 = builder.addInput([[xdim]],
+                          NormalInputNode,
+                          name='Prior')
+    ins1 = builder.addInnerSequence([[xdim]],
                                     num_inputs=1,
-                                    node_class=NormalPrecisionNode)
-    evs1 = builder.addEvolutionSequence([[3]],
-                                        num_inputs=1,
-                                        cell_class=LDSCell)
-    m1 = builder.addMergeNode(node_list=[ins1, evs1],
-                              merge_class=MergeSeqsNormalLDSEv)
-    ins2 = builder.addInnerSequence([[3]],
+                                    node_class=NormalPrecisionNode,
+                                    name='InnSeq')
+    evs1 = builder.addInnerSequence([[xdim]],
                                     num_inputs=1,
-                                    node_class=NormalPrecisionNode)
+                                    node_class=LDSNode,
+                                    name='LDS')
+    m1 = builder.addMergeNode(node_list=[ins1, evs1, n1],
+                              merge_class=MergeSeqsNormalwNormalEv,
+                              name='Recognition')
+    ins2 = builder.addInnerSequence([[ydim]],
+                                    num_inputs=1,
+                                    node_class=NormalPrecisionNode,
+                                    name='Generative')
     builder.addDirectedLink(is1, ins1, islot=0)
-    builder.addDirectedLink(m1, ins2, islot=0)
+    builder.addDirectedLink(is2, evs1, islot=0)
+    builder.addDirectedLink(m1, ins2, islot=0)      
     
     builder.build()
 

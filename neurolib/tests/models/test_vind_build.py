@@ -17,7 +17,7 @@ import unittest
 
 import tensorflow as tf
 
-from neurolib.models.flds import fLDS
+from neurolib.models.vind import VIND
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -26,7 +26,7 @@ range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
-class FLDSTestBuild(tf.test.TestCase):
+class VINDTestBuild(tf.test.TestCase):
   """
   """  
   def setUp(self):
@@ -39,7 +39,7 @@ class FLDSTestBuild(tf.test.TestCase):
     """
     """
     print("\nTest 0: fLDS initialization")
-    fLDS(input_dims=[[10]],
+    VIND(input_dims=[[10]],
          state_dim=[[3]])
   
 

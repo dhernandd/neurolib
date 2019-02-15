@@ -182,9 +182,9 @@ class CustomNode(InnerNode):
       raise ValueError("Inputs are mandatory for the CustomNode")
     print("cust, inputs", inputs)
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
 
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get a sample from the CustomNode
     """
@@ -198,12 +198,20 @@ class CustomNode(InnerNode):
                                            self.oslot_names)
     return result
 
+  def build_output(self, oname, *args, **kwargs):
+    """
+    """
+    if oname in self.in_builder._oslot_to_inner_node_oslot:
+      inner_name = self.in_builder._oslot_to_inner_node_oslot[oname][0]
+      inner_node = self.in_builder.nodes[inner_name]
+      return inner_node.build_output(oname, *args, **kwargs)
+      
   def _build(self):
     """
     Build the Custom Node
     """    
     # Fill Custom Node oslots
-    rslt = self.get_outputs()
+    rslt = self.build_outputs()
     
     for oslot, tensor in enumerate(rslt):
       self.fill_oslot_with_tensor(oslot, tensor)

@@ -73,7 +73,7 @@ class ANode(abc.ABC):
     that case, ANode could act as a simple wrapper that returns the input and
     the output.
     
-    A child of ANode should implement __call__, get_outputs, _build.
+    A child of ANode should implement __call__, build_outputs, _build.
     """
     # set builder attr and node label
     self.builder = builder
@@ -283,11 +283,11 @@ class ANode(abc.ABC):
     """
     Evaluate the node on a list of inputs.
     
-    NOTE: Delegate to get_outputs
+    NOTE: Delegate to build_outputs
     """
     raise NotImplementedError("Please implement me.")
 
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Evaluate the node on a dict of inputs. 
     """
@@ -298,4 +298,12 @@ class ANode(abc.ABC):
     Build the node
     """
     raise NotImplementedError("Please implement me.")    
+  
+  def _build_model_outputs(self):
+    """
+    Build outputs that belong to the model, not to the node 
+    """
+    pass
+  
+    
   

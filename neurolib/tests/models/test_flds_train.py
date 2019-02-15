@@ -59,7 +59,7 @@ class fLDSTestTrain(tf.test.TestCase):
     flds = fLDS(input_dims=input_dims,
                 state_dim=[[2]],
                 max_steps=max_steps,
-                save_on_valid_improvement=True)
+                save_on_valid_improvement=False)
     flds.train(dataset, num_epochs=10)
     
 
