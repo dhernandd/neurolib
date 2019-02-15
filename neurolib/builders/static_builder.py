@@ -443,7 +443,6 @@ class StaticBuilder(Builder):
       """
       """
       raise NotImplementedError
-    
     def make_array_shape_compatible(tfshape, array):
       """
       """
