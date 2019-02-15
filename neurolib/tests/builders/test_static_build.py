@@ -17,7 +17,6 @@ import unittest
 import tensorflow as tf
 
 from neurolib.builders.static_builder import StaticBuilder
-from neurolib.encoder.normal import NormalTriLNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -166,48 +165,6 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     print("enc1._islot_to_itensor", enc1._islot_to_itensor)
     print("enc1._islot_to_itensor", enc2._islot_to_itensor)
 
-  @unittest.skipIf(6 not in tests_to_run, "Skipping")
-  def test_BuildModel4(self):
-    """
-    Test building the simplest stochastic model possible.
-    """
-    print("\nTest 8: Building a Model with a Stochastic Node")
-    builder = StaticBuilder(scope="BasicNormal")
-    in_name = builder.addInput(10)
-    enc_name = builder.addInner(3, node_class=NormalTriLNode)
-    builder.addDirectedLink(in_name, enc_name, islot=0)
-        
-    builder.build()
-    inn, enc = builder.nodes[in_name], builder.nodes[enc_name]
-    self.assertEqual(inn._oslot_to_otensor['main'].shape.as_list()[-1],
-                     enc._islot_to_itensor[0]['main'].shape.as_list()[-1], 
-                     "The input tensors have not been assigned correctly")
-    print("enc._oslot_to_otensor", enc._oslot_to_otensor)
-    print("enc._islot_to_itensor", enc._islot_to_itensor)
-    
-  @unittest.skipIf(7 not in tests_to_run, "Skipping")
-  def test_BuildModel5(self):
-    """
-    Try to break it, the algorithm... !! Guess not mdrfkr.
-    """
-    print("\nTest 7: Building a more complicated Model")
-    builder = StaticBuilder("BreakIt")
-    in1 = builder.addInput(10)
-    in2 = builder.addInput(20)
-    enc1 = builder.addInner(3,
-                            node_class=NormalTriLNode)
-    enc2 = builder.addInner(5, num_inputs=2)
-    
-    builder.addDirectedLink(in1, enc1, islot=0)
-    builder.addDirectedLink(in2, enc2, islot=0)
-    builder.addDirectedLink(enc1, enc2, islot=1)
-    
-    builder.build()
-    enc1, enc2 = builder.nodes[enc1], builder.nodes[enc2]
-    print("enc1._oslot_to_otensor", enc1._oslot_to_otensor)
-    print("enc1._islot_to_itensor", enc1._islot_to_itensor)
-    print("enc2._oslot_to_otensor", enc2._oslot_to_otensor)
-    print("enc2._islot_to_itensor", enc2._islot_to_itensor)
 
     
 if __name__ == "__main__":

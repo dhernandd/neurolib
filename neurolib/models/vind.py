@@ -17,32 +17,27 @@ import pickle
 
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
-from neurolib.trainer.gd_trainer import GDTrainer
-from neurolib.encoder.normal import NormalPrecisionNode, LDSNode
-# from neurolib.encoder.seq_cells import LDSCell
+from neurolib.trainer.gd_trainer import GDTrainer, VINDTrainer
+from neurolib.encoder.normal import NormalPrecisionNode, LLDSNode
 from neurolib.encoder.merge import MergeSeqsNormalwNormalEv
 from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-class fLDS(Model):
+class VIND(Model):
   """
-  The fLDS class of Models. References are:
+  The VIND class of Models. References are:
   
-  - Gao Y, Archer E, Paninski L, Cunningham JP (2016). Linear dynamical neural
-  population models through nonlinear embeddings; https://arxiv.org/abs/1605.08454
-  
-  - Archer E, Park IM, Büsing L, Cunningham JP, Paninski L. (2016) Black box
-  variational inference for state space models.
-  
-  
-  TODO:
+  - Daniel Hernandez, Antonio Khalil Moretti, Ziqiang Wei, Shreya Saxena, John
+  Cunningham, Liam Paninski; A Novel Variational Family for Hidden Nonlinear
+  Markov Models; arXiv:1811.02459
   """
   def __init__(self,
                mode='new',
                builder=None,
                input_dims=None,
                state_dim=None,
+               with_trial_ids=False,
                batch_size=1,
                max_steps=25,
                save_on_valid_improvement=False,
@@ -52,7 +47,7 @@ class fLDS(Model):
                restore_metafile=None,
                **dirs):
     """
-    Initialize the fLDS
+    Initialize VIND
     
     Args:
         input_dims (int or list of list of ints) : The dimensions of the input
@@ -73,13 +68,13 @@ class fLDS(Model):
         
         dirs (dict) :
     """
-    self._main_scope = 'fLDS'
+    self._main_scope = 'VIND'
     self.mode = mode
     self.builder = builder
     self.save = save_on_valid_improvement
     self.keep_logs = keep_logs
 
-    super(fLDS, self).__init__(**dirs)
+    super(VIND, self).__init__(**dirs)
     
     self.batch_size = batch_size
     if mode == 'new':
@@ -98,12 +93,11 @@ class fLDS(Model):
         
         # deal with dimensions
         self.input_dims = self._dims_to_list(input_dims)
-        self.state_dims = self._dims_to_list(state_dim)
-        self.ydim = self.input_dims[0][0]
-        self.xdim = self.state_dims[0][0]
-  
         self.num_inputs = len(self.input_dims)
-        self.ds_state_dim = self.state_dims
+        self.state_dim = self._dims_to_list(state_dim)
+        self.ydim = self.input_dims[0][0]
+        self.xdim = self.state_dim[0][0]
+  
       else:
         self._is_custom_build = True
 
@@ -164,7 +158,7 @@ class fLDS(Model):
     this_model_dirs.update({'tr_optimizer' : 'adam',
                             'tr_lr' : 5e-4})
     this_model_dirs.update(directives)
-    super(fLDS, self)._update_default_directives(**this_model_dirs)
+    super(VIND, self)._update_default_directives(**this_model_dirs)
             
   def build(self):
     """
@@ -176,28 +170,29 @@ class fLDS(Model):
     
     rec_dirs = self.directives['rec']
     gen_dirs = self.directives['gen']
-    lds_dirs = self.directives['lds']
+    llds_dirs = self.directives['llds']
     if builder is None:
+      sec_iseqs = []
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
-                                                 max_steps=self.max_steps) 
-      is1 = builder.addInputSequence([[ydim]], name='Observation')
-      is2 = builder.addInputSequence([[xdim]], name='State')
-      n1 = builder.addInput([[xdim]],
-                            NormalInputNode,
-                            name='Prior')
-      ins1 = builder.addInnerSequence([[xdim]],
+                                                 max_steps=self.max_steps)
+      obs = builder.addInputSequence([[ydim]], name='Observation')
+      is2 = builder.addInputSequence([[xdim]], name='StateSeq')
+      n1 = builder.addInput([[xdim]], NormalInputNode, name='Prior')
+      for i, dim in enumerate(self.input_dims[1:], 1):
+        sec_iseqs.append(builder.addInputSequence([dim], name='Input'+str(i)))
+      ins1 = builder.addInnerSequence(xdim,
                                       num_inputs=1,
                                       node_class=NormalPrecisionNode,
                                       name='InnSeq',
                                       **rec_dirs)
       evs1 = builder.addInnerSequence([[xdim]],
-                                      num_inputs=1,
-                                      node_class=LDSNode,
-                                      name='LDS',
-                                      **lds_dirs)
-#       evs1 = builder.addEvolutionSequence([[xdim]],
-#                                           num_inputs=1,
-#                                           cell_class=LDSCell,
+                                      num_inputs=self.num_inputs,
+                                      node_class=LLDSNode,
+                                      name='LLDS',
+                                      **llds_dirs)
+#       evs1 = builder.addEvolutionSequence(xdim,
+#                                           num_inputs=self.num_inputs-1,
+#                                           cell_class=LLDSCell,
 #                                           name='LDS',
 #                                           **lds_dirs)
       m1 = builder.addMergeNode(node_list=[ins1, evs1, n1],
@@ -209,15 +204,22 @@ class fLDS(Model):
                                       node_class=NormalPrecisionNode,
                                       name='Generative',
                                       **gen_dirs)
-      builder.addDirectedLink(is1, ins1, islot=0)
+      builder.addDirectedLink(obs, ins1, islot=0)
       builder.addDirectedLink(is2, evs1, islot=0)
+      for i, iseq in enumerate(sec_iseqs, 1):
+        builder.addDirectedLink(iseq, evs1, islot=i)
       builder.addDirectedLink(m1, ins2, islot=0)
+      
+      self._declare_additional_input_nodes()
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
     
     # build the tensorflow graph
     builder.build()
+    self._build_model_specific_outputs()
+    
+    # pull in builder attributes
     self.nodes = builder.nodes
     self.otensor_names = builder.otensor_names
     self.dummies = builder.dummies
@@ -229,14 +231,36 @@ class fLDS(Model):
 
     # trainer
     tr_dirs = self.directives['tr']
-    self.trainer = GDTrainer(self,
-                             **tr_dirs)
+    self.trainer = VINDTrainer(self,
+                               **tr_dirs)
 
     if self.save:
       self.save_otensor_names()
       
     self._is_built = True
 
+  def _declare_additional_input_nodes(self):
+    """
+    Often we would like to call specific nodes in the model graph with user
+    provided inputs. This function declares the necessary extra input nodes.
+    This is coupled with self._build_model_specific_outputs which adds InnerNode
+    calls to the MG
+    
+    TODO
+    """
+    pass
+  
+  def _build_model_specific_outputs(self):
+    """
+    Often we would like to call specific nodes in the model graph with user
+    provided inputs. This function builds these model-specific outputs. This is
+    coupled with self._build_model_specific_outputs which adds InnerNode calls
+    to the MG
+    
+    TODO
+    """
+    pass
+  
   def _check_custom_build(self):
     """
     Check that a user-declared build is consistent with the DeepKalmanFilter names

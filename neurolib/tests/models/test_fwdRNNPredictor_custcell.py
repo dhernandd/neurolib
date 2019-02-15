@@ -228,25 +228,6 @@ class CustomCellTrainTest(tf.test.TestCase):
     rnn = PredictorRNN(builder=builder)
     rnn.train(dataset, num_epochs=20)
 
-     
-  @unittest.skipIf(8 not in tests_to_run, "Skipping")
-  def test_lds_cell_build(self):
-    """
-    """
-    scope = "Main"
-    max_steps = 25
- 
-    builder = SequentialBuilder(max_steps=max_steps,
-                                scope=scope)
-    ev1 = builder.addEvolutionSequence([[3]],
-                                       num_inputs=1,
-                                       cell_class=LDSCell)
-    builder.build()
-     
-    o = builder.get_node_output(ev1, oslot='A')
-    print(o)
-    o = builder.eval_node_oslot(ev1, oslot='A')
-    print(o[0,0])
 
     
 if __name__ == '__main__':

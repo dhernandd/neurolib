@@ -20,9 +20,14 @@ import tensorflow as tf
 from tensorflow.contrib.layers.python.layers import fully_connected  #pylint: disable=no-name-in-module
 
 from neurolib.encoder.inner import InnerNode
-from neurolib.encoder import MultivariateNormalTriL, MultivariateNormalFullCovariance  # @UnresolvedImport
+from neurolib.encoder import (MultivariateNormalTriL, # @UnresolvedImport
+                              MultivariateNormalFullCovariance, # @UnresolvedImport
+                              MultivariateNormalLinearOperator) # @UnresolvedImport
 from neurolib.encoder import act_fn_dict
 from neurolib.utils.directives import NodeDirectives
+from neurolib.utils.shapes import infer_shape
+
+# from tensorflow.contrib.distributions.python.ops.mvn_linear_operator import MultivariateNormalLinearOperator
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -78,7 +83,8 @@ class NormalNode(InnerNode):
     """
     raise NotImplementedError("")
   
-  def concat_inputs(self, islot_to_itensor):
+  @staticmethod
+  def concat_inputs(islot_to_itensor):
     """
     Concat input tensors
     """
@@ -87,29 +93,46 @@ class NormalNode(InnerNode):
       itensors.append(elem['main'])
     return tf.concat(itensors, axis=-1)
 
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Evaluate the node on a dict of inputs.
     """
     raise NotImplementedError("")
-          
+  
   @abstractmethod
   def _build(self):
     """
     """
     raise NotImplementedError("")
-
+  
+  def sample(self, **ipt):
+    """
+    """
+    try:
+      return self._sample(**ipt)
+    except AttributeError:
+      try:
+        return ipt['dist'].sample()
+      except KeyError:
+        return self.dist.sample()
+    
   def log_prob(self, ipt):
     """
     Get the loglikelihood of the inputs `ipt` for this distribution
     """
-    return self.dist.log_prob(ipt)
+    try:
+      return self._logprob(ipt)
+    except AttributeError:
+      return self.dist.log_prob(ipt)
   
   def entropy(self):
     """
     Get the entropy for this distribution
     """
-    return self.dist.entropy()
+    try:
+      return self._entropy()
+    except AttributeError:
+      return self.dist.entropy()
 
 
 class NormalTriLNode(NormalNode):
@@ -201,11 +224,38 @@ class NormalTriLNode(NormalNode):
     if not inputs:
       raise ValueError("Inputs are mandatory for calling the NormalTriLNode")
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
     
-  def get_loc(self, _input):
+  def build_outputs(self, islot_to_itensor=None):
     """
-    Get the loc of the distribution.
+    Get the outputs of the NormalTriLNode
+    """
+    if islot_to_itensor is not None:
+      _input = islot_to_itensor
+    else:
+      _input = self._islot_to_itensor
+    _input = self.concat_inputs(_input)
+  
+    loc, hid_layer = self.build_output('loc', _input)
+    scale = self.build_output('scale', _input, hid_layer)
+    samp, dist = self.build_output('main', loc, scale)
+    
+    return samp, loc, scale, dist
+  
+  def build_output(self, oname, *inputs, **optinputs):
+    """
+    Build a single output for this node
+    """
+    if oname == 'loc':
+      return self.build_loc(inputs[0])
+    elif oname == 'scale':
+      return self.build_scale_tril(inputs[0], **optinputs)
+    elif oname == 'main':
+      return self.build_main(inputs[0], inputs[1])
+    
+  def build_loc(self, _input):
+    """
+    Build the loc of the distribution.
     
     Args:
       _input (tf.Tensor): The inputs to the node
@@ -248,7 +298,7 @@ class NormalTriLNode(NormalNode):
     
     return loc, hid_layer
   
-  def get_scale_tril(self, _input, hid_layer=None):
+  def build_scale_tril(self, _input, hid_layer=None):
     """
     Get the Cholesky decomposition of the variance
     
@@ -266,10 +316,11 @@ class NormalTriLNode(NormalNode):
     rangeNNws = dirs.scale_rangeNNws
         
     scope_suffix = "_scale"
+    input_shape = infer_shape(_input)
+    xdim = self.xdim
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       if dirs.shareparams:
-        scale = fully_connected(hid_layer,
-                                self.xdim**2,
+        scale = fully_connected(hid_layer, xdim**2,
                                 activation_fn=None)
       else:
         # 1st layer
@@ -298,46 +349,35 @@ class NormalTriLNode(NormalNode):
 #         hid_init_b = tf.random_normal_initializer(stddev=0.1/np.sqrt(numnodes))
         act = act_fn_dict[activations[numlayers-1]]
         scale = fully_connected(hid_layer,
-                                self.xdim**2,
+                                xdim**2,
                                 activation_fn=act,
                                 weights_initializer=hid_init_w)
       
       # select the lower triangular piece
-      sc_shape = ([-1, self.max_steps, self.xdim, self.xdim] if self.is_sequence
-                  else [-1, self.xdim, self.xdim])
+      sc_shape = input_shape[:-1] + [xdim, xdim]
       scale = tf.reshape(scale, shape=sc_shape)
       scale = tf.matrix_band_part(scale, -1, 0)
       
     return scale
   
-  def get_dist(self, loc, scale):
+  def build_main(self, loc, scale):
+    """
+    """
+    dist = self.build_dist(loc, scale)
+    samp = dist.sample()
+    return samp, dist
+      
+  def build_dist(self, loc, scale):
     """
     Get tf distribution given loc and scale
     """
     return MultivariateNormalTriL(loc=loc, scale_tril=scale)
     
-  def get_outputs(self, islot_to_itensor=None):
-    """
-    Get the outputs of the NormalTriLNode
-    """
-    if islot_to_itensor is not None:
-      _input = islot_to_itensor
-    else:
-      _input = self._islot_to_itensor
-    _input = self.concat_inputs(_input)
-  
-    loc, hid_layer = self.get_loc(_input)
-    scale = self.get_scale_tril(_input, hid_layer)
-    dist = self.get_dist(loc, scale)
-    samp = dist.sample()
-    
-    return samp, loc, scale, dist
-  
   def _build(self):
     """
     Build the NormalTriLNode
     """
-    samp, loc, scale, self.dist = self.get_outputs()
+    samp, loc, scale, self.dist = self.build_outputs()
     
     self.fill_oslot_with_tensor(0, samp)
     self.fill_oslot_with_tensor(1, loc)
@@ -384,8 +424,8 @@ class LDSNode(NormalNode):
     Update the node directives
     """
     this_node_dirs = {'outputname_1' : 'loc',
-                      'outputname_2' : 'invQ',
-                      'outputname_3' : 'A'}
+                      'outputname_2' : 'A',
+                      'outputname_3' : 'prec'}
     this_node_dirs.update(dirs)
     super(LDSNode, self)._update_directives(**this_node_dirs)
     
@@ -410,75 +450,10 @@ class LDSNode(NormalNode):
     if not inputs:
       raise ValueError("Inputs are mandatory for calling the LDSNode")
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
     
-  def get_A(self):
-    """
-    Declare the evolution matrix A
-    """
-    xdim = self.xdim
-    scope_suffix = "_A"
-#     oshape = [1, self.xdim, self.xdim]
-    oshape = [xdim, xdim]
-    dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
-    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
-#       eye = np.expand_dims(np.eye(self.xdim, dtype=np.float64), axis=0)
-      eye = np.eye(xdim, dtype=np.float64)
-      eye = tf.constant_initializer(eye)
-      A = tf.get_variable('A',
-                          shape=oshape,
-                          dtype=tf.float64,
-                          initializer=eye)
-      A = tf.expand_dims(A, axis=0)
-      A = tf.tile(A, dummy_bsz) 
-      A.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
-    return A
+    return self.build_outputs(islot_to_itensor)
     
-  def get_loc(self, _input, A):
-    """
-    Declare the loc
-    """
-    scope_suffix = "_loc"
-    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
-      _input = tf.expand_dims(_input, axis=1)
-      loc = tf.matmul(_input, A) # in this order A
-      loc = tf.squeeze(loc, axis=1) 
-
-    return loc
-  
-  def get_invQ(self):
-    """
-    Declare the precision (inverse covariance)
-    """
-    xdim = self.xdim
-    scope_suffix = "_invQ"
-#     oshape = [1, self.xdim, self.xdim]
-    oshape = [xdim, xdim]
-    dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
-    with tf.variable_scope(self.name+scope_suffix, reuse=tf.AUTO_REUSE):
-#       eye = np.expand_dims(np.eye(self.xdim, dtype=np.float64), axis=0)
-      eye = np.eye(xdim, dtype=np.float64)
-      eye = tf.constant_initializer(eye)
-      invQscale = tf.get_variable('Q',
-                                  shape=oshape,
-                                  dtype=tf.float64,
-                                  initializer=eye)
-      invQscale = tf.expand_dims(invQscale, axis=0)
-      invQscale = tf.tile(invQscale, dummy_bsz)
-      invQscale.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
-            
-      invQ = tf.matmul(invQscale, invQscale, transpose_b=True)
-      cov = tf.matrix_inverse(invQ)
-    
-    return invQ, cov
-  
-  def get_dist(self, loc, cov):
-    """
-    Declare the main output
-    """
-    return MultivariateNormalFullCovariance(loc=loc, covariance_matrix=cov)
-
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get the outputs of the LDSNode
     """
@@ -488,24 +463,442 @@ class LDSNode(NormalNode):
       _input = self._islot_to_itensor
     _input = self.concat_inputs(_input)
       
-    A = self.get_A()
-    loc = self.get_loc(_input, A)
-    invQ, cov = self.get_invQ()
-    dist = self.get_dist(loc, cov)
-    samp = dist.sample()
+    A, _ = self.build_output('A')
+    loc, _ = self.build_output('loc', _input, A)
+    prec, output = self.build_output('prec')
+    scale = output[0]
     
-    return samp, loc, invQ, A, dist
+    dist = self.build_dist(loc, scale)
+    samp, _ = self.build_output('main', loc=loc, scale=scale, dist=dist)
+    
+    return samp, loc, A, prec, dist
   
+  def build_dist(self, loc, scale):
+    """
+    Declare the main output
+    """
+    return MultivariateNormalLinearOperator(loc=loc, scale=scale)
+  
+  def build_output(self, oname, *args, **kwargs):
+    """
+    Build a single output for this node
+    """
+    if oname == 'A':
+      return self.build_A()
+    elif oname == 'loc':
+      return self.build_loc(args[0], args[1])
+    elif oname == 'prec':
+      return self.build_prec_scale()
+    elif oname == 'main':
+      return self.build_main(**kwargs)
+  
+  def build_A(self):
+    """
+    Declare the evolution matrix A
+    """
+    xdim = self.xdim
+    scope_suffix = "_A"
+    oshape = [xdim, xdim]
+#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
+    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
+      eye = np.eye(xdim, dtype=np.float64)
+      eye = tf.constant_initializer(eye)
+      A = tf.get_variable('A',
+                          shape=oshape,
+                          dtype=tf.float64,
+                          initializer=eye)
+#       A = tf.expand_dims(A, axis=0)
+#       A = tf.tile(A, dummy_bsz) 
+#       A.set_shape([1, xdim, xdim]) # tf cannot deduce the shape here
+      print("A", A)
+    return A, ()
+    
+  def build_loc(self, _input, A):
+    """
+    Declare the loc
+    """
+    scope_suffix = "_loc"
+    input_shape = infer_shape(_input)
+    r = len(input_shape)
+    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
+      _input = tf.expand_dims(_input, axis=-2)
+      for _ in input_shape[r-2::-1]:
+        A = tf.expand_dims(A, axis=-3)
+      A = tf.tile(A, input_shape[:-1] + [1, 1])
+      loc = tf.matmul(_input, A) # in this order A
+      loc = tf.squeeze(loc, axis=-2) 
+
+    return loc, ()
+  
+  def build_prec_scale(self):
+    """
+    Declare the prec (inverse covariance)
+    """
+    xdim = self.xdim
+    scope_suffix = "_precision"
+    oshape = [xdim, xdim]
+#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
+    with tf.variable_scope(self.name+scope_suffix, reuse=tf.AUTO_REUSE):
+      eye = np.eye(xdim, dtype=np.float64)
+#       zeros_init = tf.constant_initializer(np.array(0.0, dtype=np.float64))
+      eye_init = tf.constant_initializer(eye)
+#       eye_init = eye + tf.get_variable('z',
+#                                        shape=oshape,
+#                                        dtype=tf.float64,
+#                                        initializer=zeros_init)
+      eye_init = tf.get_variable('eye_init',
+                                       shape=oshape,
+                                       dtype=tf.float64,
+                                       initializer=eye_init)
+      invscale = tf.linalg.band_part(eye_init, -1, 0)
+#       invscale = tf.expand_dims(invscale, axis=0)
+#       invscale = tf.tile(invscale, dummy_bsz)
+#       invscale.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
+      prec = tf.matmul(invscale, invscale, transpose_b=True)
+
+      scale = tf.matrix_inverse(invscale) # uses that inverse of LT is LT
+      scale = tf.linalg.LinearOperatorLowerTriangular(scale)
+
+    return prec, (scale,)
+  
+  def build_main(self, **kwargs):
+    """
+    Build main output
+    """
+    samp = self.sample(**kwargs)
+    return samp, ()
+      
+  def _sample(self, **pars):
+    """
+    Change this method if more efficient way to sample than tensorflow's
+    default.
+    """
+    if 'dist' in pars:
+      samp = pars['dist'].sample()
+#       samp.set_shape(self.oshapes['main']) # tfp cannot partially deduce batch shape for some reason
+      return samp
+
+    for par in ['loc', 'scale']:
+      if par not in pars: raise ValueError("{} must be provided".format(par))
+    raise NotImplementedError
+    
   def _build(self):
     """
     Build the LDSNode
     """
-    samp, loc, invQ, A, self.dist = self.get_outputs()
+    samp, loc, A, prec, self.dist = self.build_outputs()
     
     self.fill_oslot_with_tensor(0, samp)
     self.fill_oslot_with_tensor(1, loc)
-    self.fill_oslot_with_tensor(2, invQ)
-    self.fill_oslot_with_tensor(3, A)
+    self.fill_oslot_with_tensor(2, A)
+    self.fill_oslot_with_tensor(3, prec)
+
+    self._is_built = True
+    
+
+class LLDSNode(NormalNode):
+  """
+  A NormalNode with constant variance whose loc is a nonlinear, NN-parameterized
+  transformation of the input.
+  """
+  num_expected_outputs = 5
+  
+  def __init__(self,
+               builder,
+               state_sizes,
+               num_inputs=1,
+               is_sequence=False,
+               name=None,
+               name_prefix=None,
+               **dirs):
+    """
+    Initialize the LLDSNode
+    """
+    name_prefix = name_prefix or 'LLDS'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
+    super(LLDSNode, self).__init__(builder,
+                                   state_sizes=state_sizes,
+                                   num_inputs=num_inputs,
+                                   is_sequence=is_sequence,
+                                   name_prefix=name_prefix,
+                                   **dirs)
+    
+    # expect distribution
+    self.dist = None
+
+  def _update_directives(self, **dirs):
+    """
+    Update the node directives
+    """
+    this_node_dirs = {'A_numlayers' : 2,
+                      'A_numnodes' : 128,
+                      'A_activations' : 'softplus',
+                      'A_netgrowrate' : 1.0,
+                      'A_rangeNNws' : 1.0e-5,
+                      'outputname_1' : 'loc',
+                      'outputname_2' : 'A',
+                      'outputname_3' : 'prec',
+                      'outputname_4' : 'Alinear',
+                      'alpha' : 0.01}
+    this_node_dirs.update(dirs)
+    super(LLDSNode, self)._update_directives(**this_node_dirs)
+    
+  def _get_all_oshapes(self):
+    """
+    Declare the shapes for every output
+    """
+    bsz = self.batch_size
+    mx_stps = self.max_steps
+    const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
+    
+    xdim = self.state_sizes[0][0]
+    return {self.oslot_names[0] : const_sh + [xdim],
+            self.oslot_names[1] : const_sh + [xdim],
+            self.oslot_names[2] : const_sh + [xdim, xdim],
+            self.oslot_names[3] : const_sh + [xdim, xdim],
+            self.oslot_names[3] : const_sh + [xdim, xdim]}
+
+  def __call__(self, *inputs):
+    """
+    Evaluate the node on a list of inputs.
+    """
+    if not inputs:
+      raise ValueError("Inputs are mandatory for calling the LDSNode")
+    islot_to_itensor = [{'main' : ipt} for ipt in inputs]
+    return self.build_outputs(islot_to_itensor)
+    
+  def build_outputs(self, islot_to_itensor=None):
+    """
+    Get the outputs of the LDSNode
+    """
+    if islot_to_itensor is not None:
+      _input = islot_to_itensor
+    else:
+      _input = self._islot_to_itensor
+    _input = self.concat_inputs(_input)
+      
+    Alinear, _ = self.build_output('Alinear')
+    A, _ = self.build_A(_input, Alinear)
+    loc, _ = self.build_loc(_input, A)
+    prec, output = self.build_output('prec')
+    scale = output[0]
+
+    dist = self.build_dist(loc, scale)
+    samp, _ = self.build_output('main', loc=loc, scale=scale, dist=dist)
+    
+    return samp, loc, A, prec, Alinear, dist
+  
+  def build_next_loc(self, _input):
+    """
+    Build 
+    """
+    Alinear, _ = self.build_output('Alinear')
+    A, _ = self.build_A(_input, Alinear)
+    loc, _ = self.build_loc(_input, A)
+    
+    return loc
+
+  def build_dist(self, loc, scale):
+    """
+    Declare the main output
+    """
+    return MultivariateNormalLinearOperator(loc=loc, scale=scale)
+  
+  def build_output(self, oname, *args, **kwargs):
+    """
+    Build a single output
+    """
+    if oname == 'Alinear':
+      return self.build_Alinear()
+    elif oname == 'A':
+      return self.build_A(args[0], args[1])
+    elif oname == 'loc':
+      return self.build_loc(args[0], args[1])
+    elif oname == 'prec':
+      return self.build_prec_scale()
+    elif oname == 'main':
+      return self.build_main(**kwargs)
+    else:
+      raise ValueError("")
+    
+  def build_Alinear(self):
+    """
+    Build the linear component of the dynamics
+    
+    TODO: Batch size in all these constant tensors is NOT needed! Just return
+    Alinear of shape [1, xdim, xdim] and broadcast
+    """
+    xdim = self.xdim
+    scope_suffix = "_Alinear"
+    oshape = [xdim, xdim]
+#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
+    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
+      eye = np.eye(xdim, dtype=np.float64)
+      eye = tf.constant_initializer(eye)
+      Al = tf.get_variable('Alinear',
+                          shape=oshape,
+                          dtype=tf.float64,
+                          initializer=eye)
+#       A = tf.expand_dims(A, axis=0)
+#       A = tf.tile(A, dummy_bsz) 
+#       A.set_shape([1, xdim, xdim]) # tf cannot deduce the shape here
+#       print("Alinear", A)
+    return Al, ()
+
+  def build_A(self, _input, Alinear):
+    """
+    Declare the evolution matrix A
+    """
+    dirs = self.directives
+    
+    # get directives
+    numlayers = dirs.A_numlayers
+    numnodes = dirs.A_numnodes
+    activations = dirs.A_activations
+    rangeNNws = dirs.A_rangeNNws
+    alpha = dirs.alpha
+
+    xdim = self.xdim
+    input_shape = infer_shape(_input)
+    r = len(input_shape)
+    scope_suffix = "_A"
+    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
+      # 1st layer
+      act = act_fn_dict[activations[0]]
+      hid_init_b = tf.random_normal_initializer(stddev=1/np.sqrt(numnodes[0]))
+      hid_init_w = tf.random_normal_initializer(stddev=rangeNNws[0])
+      hid_layer = fully_connected(_input,
+                                  numnodes[0],
+                                  activation_fn=act,
+#                                   weights_initializer=hid_init_w,
+                                  biases_initializer=hid_init_b)
+      # 2 -> n-1th layer
+      for n in range(1, numlayers-1):
+        hid_init_b = tf.random_normal_initializer(stddev=1/np.sqrt(numnodes[n]))
+        hid_init_w = tf.random_normal_initializer(stddev=rangeNNws[n])
+        act = act_fn_dict[activations[n]]
+        hid_layer = fully_connected(hid_layer,
+                                    numnodes[n],
+                                    activation_fn=act,
+                                    weights_initializer=hid_init_w,
+                                    biases_initializer=hid_init_b)
+      # nth layer 
+      act = act_fn_dict[activations[numlayers-1]]
+      B = fully_connected(hid_layer, xdim**2, activation_fn=act)
+      
+      # Reshape
+      B_shape = input_shape[:-1] + [xdim, xdim]
+      B = tf.reshape(B, shape=B_shape)
+
+      for _ in input_shape[r-2::-1]:
+        Alinear = tf.expand_dims(Alinear, axis=-3)
+
+#       B_Nxdxd = tf.reshape(B, [-1, xdim, xdim], name='B')
+      A = alpha*B + Alinear # Broadcast Alinear
+      
+      return A, (B,)
+
+  def build_loc(self, _input, A):
+    """
+    Build the loc
+    """
+    scope_suffix = "_loc"
+    with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
+      _input = tf.expand_dims(_input, axis=-2)
+      loc = tf.matmul(_input, A) # in this order A
+      loc = tf.squeeze(loc, axis=-2) 
+
+    return loc, ()
+
+  def build_prec_scale(self):
+    """
+    Declare the prec (inverse covariance)
+    """
+    xdim = self.xdim
+    scope_suffix = "_precision"
+    oshape = [xdim, xdim]
+#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
+    with tf.variable_scope(self.name+scope_suffix, reuse=tf.AUTO_REUSE):
+      eye = np.eye(xdim, dtype=np.float64)
+#       zeros_init = tf.constant_initializer(np.array(0.0, dtype=np.float64))
+      eye_init = tf.constant_initializer(eye)
+#       eye_init = eye + tf.get_variable('z',
+#                                        shape=oshape,
+#                                        dtype=tf.float64,
+#                                        initializer=zeros_init)
+      eye_init = tf.get_variable('eye_init',
+                                       shape=oshape,
+                                       dtype=tf.float64,
+                                       initializer=eye_init)
+      invscale = tf.linalg.band_part(eye_init, -1, 0)
+#       invscale = tf.expand_dims(invscale, axis=0)
+#       invscale = tf.tile(invscale, dummy_bsz)
+#       invscale.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
+      prec = tf.matmul(invscale, invscale, transpose_b=True)
+
+      scale = tf.matrix_inverse(invscale) # uses that inverse of LT is LT
+      scale = tf.linalg.LinearOperatorLowerTriangular(scale)
+
+    return prec, (scale,)
+  
+  def build_prec_scale2(self):
+    """
+    Build the precision (inverse covariance)
+    """
+    xdim = self.xdim
+    scope_suffix = "_precision"
+    oshape = [xdim, xdim]
+    dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
+    with tf.variable_scope(self.name+scope_suffix, reuse=tf.AUTO_REUSE):
+      eye = np.eye(xdim, dtype=np.float64)
+      zeros_init = tf.constant_initializer(np.array(0.0, dtype=np.float64))
+      eye_init = eye + tf.get_variable('z',
+                                       shape=oshape,
+                                       dtype=tf.float64,
+                                       initializer=zeros_init)
+      invscale = tf.linalg.band_part(eye_init, -1, 0)
+      invscale = tf.expand_dims(invscale, axis=0)
+      invscale = tf.tile(invscale, dummy_bsz)
+      invscale.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
+      prec = tf.matmul(invscale, invscale, transpose_b=True)
+
+      scale = tf.matrix_inverse(invscale) # uses that inverse of LT is LT
+      scale = tf.linalg.LinearOperatorLowerTriangular(scale)
+    
+    return prec, (scale, )
+  
+  def build_main(self, **kwargs):
+    """
+    """
+    samp = self.sample(**kwargs)
+    return samp, ()
+      
+  def _sample(self, **pars):
+    """
+    Change this method if more efficient way to sample than tensorflow's
+    default.
+    """
+    if 'dist' in pars:
+      samp = pars['dist'].sample()
+      samp.set_shape(self.oshapes['main']) # tfp cannot partially deduce batch shape for some reason
+      return samp
+
+    for par in ['loc', 'scale']:
+      if par not in pars: raise ValueError("{} must be provided".format(par))
+    raise NotImplementedError
+    
+  def _build(self):
+    """
+    Build the LDSNode
+    """
+    samp, loc, A, prec, Alinear, self.dist = self.build_outputs()
+    
+    self.fill_oslot_with_tensor(0, samp)
+    self.fill_oslot_with_tensor(1, loc)
+    self.fill_oslot_with_tensor(2, A)
+    self.fill_oslot_with_tensor(3, prec)
+    self.fill_oslot_with_tensor(4, Alinear)
 
     self._is_built = True
     
@@ -597,9 +990,9 @@ class NormalPrecisionNode(NormalNode):
     if not inputs:
       raise ValueError("Inputs are mandatory for calling the LDSNode")
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
       
-  def get_loc(self, _input):
+  def build_loc(self, _input):
     """
     Get the loc of the distribution.
     
@@ -711,13 +1104,13 @@ class NormalPrecisionNode(NormalNode):
       
     return lmbda, cov
   
-  def get_dist(self, loc, cov):
+  def build_dist(self, loc, cov):
     """
     Get tf distribution given loc and the covariance
     """
     return MultivariateNormalFullCovariance(loc=loc, covariance_matrix=cov)
     
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get the outputs of the NormalTriLNode
     """
@@ -727,9 +1120,9 @@ class NormalPrecisionNode(NormalNode):
       _input = self._islot_to_itensor
     _input = self.concat_inputs(_input)
   
-    loc, hid_layer = self.get_loc(_input)
+    loc, hid_layer = self.build_loc(_input)
     prec, cov = self.get_precision(_input, hid_layer)
-    dist = self.get_dist(loc, cov)
+    dist = self.build_dist(loc, cov)
     samp = dist.sample()
     
     return samp, loc, prec, dist
@@ -738,7 +1131,7 @@ class NormalPrecisionNode(NormalNode):
     """
     Build the NormalTriLNode
     """
-    samp, loc, prec, self.dist = self.get_outputs()
+    samp, loc, prec, self.dist = self.build_outputs()
     
     self.fill_oslot_with_tensor(0, samp)
     self.fill_oslot_with_tensor(1, loc)
@@ -780,38 +1173,3 @@ class NormalPrecisionNode(NormalNode):
       self.builder.add_to_output_names(self.name + ':logprob', log_prob)
 
     return log_prob
-    
-
-#   def _build(self):
-#     """
-#     Builds the graph corresponding to a NormalPrecision node.
-#     
-#     """
-#     islot_to_itensor = self._islot_to_itensor
-#     _input = basic_concatenation(islot_to_itensor)
-# 
-#     mean, hid_layer = self._get_loc(_input)
-#     lmbda, cov = self._get_lmbda(_input, hid_layer)
-#     self.dist = MultivariateNormalFullCovariance(loc=mean,
-#                                                  covariance_matrix=cov)
-#     
-#     # Fill the oslots
-#     mean_name = self.directives['output_1_name']
-#     lmbda_name = self.directives['output_2_name']
-#     self._oslot_to_otensor[0] = self.dist.sample(name='Out' + 
-#                                                  str(self.label) + '_0')
-#     self._oslot_to_otensor[1] = tf.identity(mean, name=mean_name)
-#     self._oslot_to_otensor[2] = tf.identity(lmbda, name=lmbda_name)
-#     
-#     self._is_built = True
-        
-  
-class LocallyLinearNormalNode(NormalNode):
-  """
-  """
-  @abstractmethod
-  def _build(self):
-    """
-    """
-    NormalNode._build(self)
-  

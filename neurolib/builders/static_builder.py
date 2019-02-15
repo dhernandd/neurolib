@@ -367,6 +367,10 @@ class StaticBuilder(Builder):
   def build(self,
              scope_suffix=None):
     """
+    Build the Model
+    
+    TODO: Check that every node's input have been provided. The code compiles
+    even if they haven't!
     """
     scope_suffix = "" if scope_suffix is None else "_" + scope_suffix
     with tf.variable_scope(self.scope + scope_suffix, reuse=tf.AUTO_REUSE):
@@ -375,6 +379,7 @@ class StaticBuilder(Builder):
       queue = []
       
       # start at every input node
+      print("self.input_nodes", self.input_nodes)
       for cur_inode_name in self.input_nodes:
         cur_inode_label = self.get_label_from_name(cur_inode_name)
         queue.append(cur_inode_label)
@@ -400,14 +405,18 @@ class StaticBuilder(Builder):
             # once all parents of a child have been built, add to bfs queue
             if all(child_node._built_parents.values()):
               queue.append(child_node.label)
-
+          
   def get_node_output(self, node_name, oslot='main'):
     """
     Get output tensor
     """
     return self.nodes[node_name].get_output_tensor(oslot)
   
-  def eval(self, otensor, feed_dict=None, lmbda=None):
+  def eval(self,
+           sess,
+           otensor,
+           feed_dict=None,
+           lmbda=None):
     """
     Evaluate a tensor
     """
@@ -420,20 +429,61 @@ class StaticBuilder(Builder):
     feed_dict.update(dummy_feed)
     print("feed_dict", feed_dict)
 
-    sess = tf.Session(graph=tf.get_default_graph())
-    sess.run(tf.global_variables_initializer())
     if lmbda is not None:
       rslt = sess.run(lmbda(otensor), feed_dict=feed_dict)
     else:
       rslt = sess.run(otensor, feed_dict=feed_dict)
     return rslt
   
-  def eval_node_oslot(self, node, oslot='main', feed_dict=None, lmbda=None):
+  def make_shapes_compatible_or_puke(self, feed_dict):
+    """
+    Make shapes compatible or puke! 
+    """
+    def are_shapes_pseudocompatible(tfshape, arshape):
+      """
+      """
+      raise NotImplementedError
+    
+    def make_array_shape_compatible(tfshape, array):
+      """
+      """
+      raise NotImplementedError
+      
+    for tname in feed_dict:
+      tensor = tf.get_default_graph().get_tensor_by_name(tname)
+      tfshape, arshape = tensor.shape, feed_dict[tname].shape
+#       print("tfshape, arshape", tfshape, arshape, tfshape.is_compatible_with(arshape))
+      if tfshape.is_compatible_with(arshape):
+        continue
+      elif are_shapes_pseudocompatible(tfshape, arshape):
+        feed_dict[tname] = make_array_shape_compatible(tfshape, feed_dict[tname])
+      else:
+        raise ValueError("")
+      
+  def eval_node_oslot(self,
+                      sess,
+                      node,
+                      oslot='main',
+                      feed_dict=None,
+                      inputs=None,
+                      lmbda=None):
     """
     Evaluate the output tensor of a node
+    
+    TODO:
+      - Automatic handling of feed_dict;
+      - Call to node.get_outputs if inputs is not None? (adds to the graph after building, ugh)
+      - Smart handling of shapes. 
     """
+    if feed_dict is not None:
+      feed_dict = dict(feed_dict) # make a copy of user provided fd
+      self.make_shapes_compatible_or_puke(feed_dict)
     otensor = self.nodes[node].get_output_tensor(oslot)
-    return self.eval(otensor, feed_dict=feed_dict, lmbda=lmbda)
+    
+    
+    return self.eval(sess, otensor,
+                     feed_dict=feed_dict,
+                     lmbda=lmbda)
   
   
 class CustomNodeBuilder(StaticBuilder):

@@ -60,7 +60,7 @@ class InnerNode(ANode):
     this_node_dirs.update(dirs)
     super(InnerNode, self)._update_directives(**this_node_dirs)
     
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     """
     raise NotImplementedError("Please implement me")

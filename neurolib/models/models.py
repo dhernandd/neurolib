@@ -142,6 +142,8 @@ class Model(abc.ABC):
     """
     scope = self.main_scope
     dset = {}
+    
+    # Always feed to InputNode oslots with well defined, unique otensor names
     for key in dataset:
       dset[scope + '/' + key + '_main:0'] = dataset[key]
     if batch_size is None:
@@ -325,10 +327,16 @@ class Model(abc.ABC):
   def eval(self, names, dataset, key=None):
     """
     Evaluate a tensor given an input dataset.
+    
+    TODO: Implement this in terms of Builder.eval()
     """
     sess = self.sess
-    if isinstance(names, str): names = [names]
-    opnames = [self.otensor_names[name] for name in names]
+#     if isinstance(names, str): names = [names]
+#     opnames = [self.otensor_names[name] for name in names]
+    if isinstance(names, list):
+      opnames = [self.otensor_names[name] for name in names]
+    else:
+      opnames = self.otensor_names[names]
     
     if key is None:
       fd = self.prepare_dataset(dataset)

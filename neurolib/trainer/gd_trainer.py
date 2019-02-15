@@ -206,18 +206,16 @@ class GDTrainer(Trainer):
     Train a Model
     """
     sess = self.sess
+    
+    # get subdatasets
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
     
     merged_summaries = self.merge_summaries()
     tr_batch_size = batch_size or self.batch_size or 1
     cost_name = self.model.otensor_names['cost']
+    cvalid = np.inf
     for ep in range(num_epochs):
-      if ep == 0:
-        cvalid = self.reduce_op_from_batches(sess,
-                                             [cost_name],
-                                             valid_dataset)
-
       # GD update
       self.update(sess,
                   train_dataset,
@@ -312,3 +310,75 @@ class GDTrainer(Trainer):
       merged_summaries.append(curr_summ)
 
     return tf.summary.merge(merged_summaries)
+
+
+class VINDTrainer(GDTrainer):
+  """
+  """
+  def _update_default_directives(self, **dirs):
+    """
+    Update the default directives.
+    """
+    this_trainer_dirs = {'numfpis' : 2}
+    if self.mode == 'new':
+      cost_name = self.model.otensor_names['cost']
+      cost = tf.get_default_graph().get_tensor_by_name(cost_name)
+      this_trainer_dirs['summaries'] = {'cost' : cost}
+    this_trainer_dirs.update(dirs)
+    super(VINDTrainer, self)._update_directives(**this_trainer_dirs)
+
+  def train(self, dataset_dict, num_epochs, batch_size=None):
+    """
+    """
+    sess = self.sess
+    
+    # get subdatasets
+    train_dataset = dataset_dict['train']
+    valid_dataset = dataset_dict['valid']
+
+    merged_summaries = self.merge_summaries()
+    tr_batch_size = batch_size or self.batch_size or 1
+    cost_name = self.model.otensor_names['cost']
+    cvalid = np.inf
+    started_training = False
+    for ep in range(num_epochs):
+      # fpi step
+      if not started_training:
+        state_seqs_tr = self.model.eval('InnSeq:main', train_dataset)
+        state_seqs_vd = self.model.eval('InnSeq:main', valid_dataset)
+        train_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_tr
+        valid_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_vd
+        started_training = True
+      else:
+        for _ in range(self.directives['numfpis']):
+          state_seqs_tr = self.model.eval('Recognition:main', train_dataset)
+          state_seqs_vd = self.model.eval('Recognition:main', valid_dataset)
+          train_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_tr
+          valid_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_vd
+      
+      # gd step
+      self.update(sess, train_dataset,
+                  batch_size=tr_batch_size)
+      ctrain = self.reduce_op_from_batches(sess, [cost_name],
+                                           train_dataset)
+      print("ep, cost: {}, {}".format(ep, ctrain))
+
+      # Add summaries
+      if self.keep_logs:
+        self.run_summaries(sess, train_dataset, merged_summaries, ep)
+      
+      # Save on validation improvement
+      if self.save:
+        new_cvalid = self.reduce_op_from_batches(sess,
+                                                 [cost_name],
+                                                 valid_dataset)
+        if new_cvalid < cvalid:
+          cvalid = new_cvalid
+          print('Valid. cost:', cvalid, '... Saving...')
+          
+          rslts_path = self.rslts_dir + self.model.main_scope
+          global_step = self.model.otensor_names['global_step']
+          self.saver.save(sess,
+#                           rslts_path+self.model.main_scope,
+                          rslts_path,
+                          global_step=global_step)

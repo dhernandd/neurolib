@@ -19,6 +19,7 @@ import tensorflow as tf
 from neurolib.encoder import MultivariateNormalFullCovariance  # @UnresolvedImport
 from neurolib.encoder.inner import InnerNode
 from neurolib.utils.directives import NodeDirectives
+from neurolib.utils.shapes import infer_shape, match_tensor_shape
 
 # pylint: disable=bad-indentation, no-member
 
@@ -294,9 +295,9 @@ class MergeNormals(MergeNode):
       
     islot_to_itensor = [{'loc' : inputs[i], 'scale' : inputs[i+1]} for i 
                         in range(l/2)]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
   
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get MergeNormals outputs
     """
@@ -336,7 +337,7 @@ class MergeNormals(MergeNode):
     """
     Build the MergeNormals Node
     """
-    samp, loc, cov = self.get_outputs()
+    samp, loc, cov = self.build_outputs()
     
     self.fill_oslot_with_tensor(0, samp)
     self.fill_oslot_with_tensor(1, loc)
@@ -345,7 +346,7 @@ class MergeNormals(MergeNode):
     self._is_built = True 
 
   
-class MergeSeqsNormalLDSEv(MergeNode):
+class MergeSeqsNormalwNormalEv(MergeNode):
   """
   Merge a normal sequence with an LDS evolution sequence
   """
@@ -358,13 +359,13 @@ class MergeSeqsNormalLDSEv(MergeNode):
                name_prefix=None,
                **dirs):
     """
-    Initialize the MergeSeqsNormalLDSEv 
+    Initialize the MergeSeqsNormalwNormalEv 
     """
     # set name
     name_prefix = name_prefix or 'MergeNormalSeqLDS'
     name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     
-    super(MergeSeqsNormalLDSEv, self).__init__(builder,
+    super(MergeSeqsNormalwNormalEv, self).__init__(builder,
                                                node_list=node_list,
                                                node_dict_tuples=node_dict_tuples,
                                                is_sequence=True,
@@ -383,10 +384,12 @@ class MergeSeqsNormalLDSEv(MergeNode):
     """
     Add implicit nodes to the `node_list` before assigning to the attribute of
     self.
+    
+    TODO: This wont work with an RNN defined DS. Fix!
     """
-    lds_name = node_list[1]
-    lds = self.builder.nodes[lds_name]
-    node_list.append(lds.get_init_inodes()[0])
+#     lds_name = node_list[1]
+#     lds = self.builder.nodes[lds_name]
+#     node_list.append(lds.get_init_inodes()[0])
     return node_list
 
   def _make_list_islot_otuples_from_nodelist(self):
@@ -397,7 +400,7 @@ class MergeSeqsNormalLDSEv(MergeNode):
       raise ValueError("`node_list` attribute undefined")
     
     # [prior, input sequence, LDS]
-    return [[('loc', 'prec')], [('invQ', 'A')], [('scale',)]]
+    return [[('loc', 'prec')], [('prec', 'A')], [('scale',)]]
     
   def _get_state_sizes(self):
     """
@@ -422,7 +425,7 @@ class MergeSeqsNormalLDSEv(MergeNode):
                       'outputname_2' : 'scaled',
                       'outputname_3' : 'scaleoffd'}
     this_node_dirs.update(dirs)
-    super(MergeSeqsNormalLDSEv, self)._update_directives(**this_node_dirs)
+    super(MergeSeqsNormalwNormalEv, self)._update_directives(**this_node_dirs)
   
   def _get_all_oshapes(self):
     """
@@ -441,8 +444,10 @@ class MergeSeqsNormalLDSEv(MergeNode):
     """
     Create the edges from the parents to this MergeNode
     """
+    print("self.node_list", self.node_list)
     for i, node_name in enumerate(self.node_list):
       self.builder.addDirectedLink(node_name, self, islot=i)
+    print("self.builder.adj_matrix", self.builder.adj_matrix)
     
   def __call__(self, *inputs):
     """
@@ -450,7 +455,7 @@ class MergeSeqsNormalLDSEv(MergeNode):
     """
     raise NotImplementedError
   
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get MergeNormals outputs
     """
@@ -475,6 +480,7 @@ class MergeSeqsNormalLDSEv(MergeNode):
       lmbdaMu_NxTxd = tf.squeeze(tf.matmul(lmbda_NxTxdxd, mu_NxTxdx1), axis=-1)
       
       print("mu_NxTxd", mu_NxTxd)
+      main_sh = infer_shape(mu_NxTxd)
       Nsamps = tf.shape(mu_NxTxd)[0]
   
       # Get inputs from the evolution sequence
@@ -482,14 +488,24 @@ class MergeSeqsNormalLDSEv(MergeNode):
       evseq_invQ_oslot = self.node_list_tuples[islot][0][0]
       evseq_A_oslot = self.node_list_tuples[islot][0][1]
       
-      invQ_NxTxdxd = _input[islot][evseq_invQ_oslot]
-      A_NxTxdxd = _input[islot][evseq_A_oslot]
-
+      # LDS specific
+      invQ = _input[islot][evseq_invQ_oslot]
+      A = _input[islot][evseq_A_oslot]
+#       invQ_NxTxdxd, A_NxTxdxd = self._expand_dims_invQ_A(main_sh, invQ, A)
+      invQ_NxTxdxd = match_tensor_shape(main_sh, invQ, 4)
+      A_NxTxdxd = match_tensor_shape(main_sh, A, 4)
+#       for _ in main_sh[r-2::-1]:
+#         invQ = tf.expand_dims(invQ, axis=-3)
+#         A = tf.expand_dims(A, axis=-3)
+#       invQ_NxTxdxd = tf.tile(invQ, main_sh[:-1] + [1, 1])
+#       A_NxTxdxd = tf.tile(A, main_sh[:-1] + [1, 1])
+      
       # Get input from the evolution sequence prior
       islot = 2
       prior_invQ_oslot = self.node_list_tuples[islot][0][0]
       
       Q0scale_Nxdxd = _input[islot][prior_invQ_oslot]
+      print("Q0scale_Nxdxd", Q0scale_Nxdxd)
       Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
       invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
       invQ0_Nx1xdxd = tf.expand_dims(invQ0_Nxdxd, axis=1)
@@ -497,7 +513,6 @@ class MergeSeqsNormalLDSEv(MergeNode):
       # prepare tensors
       A_NTm1xdxd = tf.reshape(A_NxTxdxd[:,:-1,:,:], [Nsamps*(NTbins-1), xDim, xDim])
       invQ_NxTm2xdxd = invQ_NxTxdxd[:,:-2,:,:]
-      print("invQ_NxTxdxd", invQ_NxTxdxd)
       invQ_NTm1xdxd = tf.reshape(invQ_NxTxdxd[:,:-1,:,:], [Nsamps*(NTbins-1), xDim, xDim])
       invQ0Q_NxTm1xdxd = tf.concat([invQ0_Nx1xdxd, invQ_NxTm2xdxd], axis=1)
       invQ0Q_NTm1xdxd = tf.reshape(invQ0Q_NxTm1xdxd, [Nsamps*(NTbins-1), xDim, xDim])
@@ -575,7 +590,7 @@ class MergeSeqsNormalLDSEv(MergeNode):
     """
     Build the MergeNormalSeqLDS
     """
-    samp, loc, invscale, _ = self.get_outputs()
+    samp, loc, invscale, _ = self.build_outputs()
     
     self.fill_oslot_with_tensor(0, samp)
     self.fill_oslot_with_tensor(1, loc)
@@ -614,4 +629,6 @@ class MergeSeqsNormalLDSEv(MergeNode):
     self.builder.add_to_output_names(self.name+':Entropy', entropy)
     
     return entropy
+  
+  
   

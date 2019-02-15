@@ -120,7 +120,7 @@ class DeterministicNNNode(InnerNode):
     if not inputs:
       raise ValueError("Inputs are mandatory for the DeterministicNNNode")
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
-    return self.get_outputs(islot_to_itensor)
+    return self.build_outputs(islot_to_itensor)
   
   @staticmethod
   def concat_inputs(islot_to_itensor):
@@ -130,7 +130,7 @@ class DeterministicNNNode(InnerNode):
     itensors = [elem['main'] for elem in islot_to_itensor] # keep ordering
     return tf.concat(itensors, axis=-1)
   
-  def get_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):
     """
     Get the node single output
     """
@@ -173,7 +173,7 @@ class DeterministicNNNode(InnerNode):
     """
     Build the DeterministicNNNode
     """
-    output = self.get_outputs()
+    output = self.build_outputs()
     self.fill_oslot_with_tensor(0, output)
 
     self._is_built = True 
