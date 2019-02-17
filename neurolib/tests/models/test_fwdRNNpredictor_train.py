@@ -88,7 +88,7 @@ class RNNPredictorTrainTest(tf.test.TestCase):
                          max_steps=max_steps,
                          cell_class='lstm')
 #                          save_on_valid_improvement=True) # OK!
-    for _ in range(10):
+    for _ in range(5):
       R2 = model.anal_R2(dataset, 'valid')
       print("R2", R2)
       model.train(dataset, num_epochs=3)

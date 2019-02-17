@@ -242,6 +242,12 @@ class NormalTriLNode(NormalNode):
     
     return samp, loc, scale, dist
   
+  def build_dist(self, loc, scale):
+    """
+    Get tf distribution given loc and scale
+    """
+    return MultivariateNormalTriL(loc=loc, scale_tril=scale)
+  
   def build_output(self, oname, *inputs, **optinputs):
     """
     Build a single output for this node
@@ -367,12 +373,6 @@ class NormalTriLNode(NormalNode):
     samp = dist.sample()
     return samp, dist
       
-  def build_dist(self, loc, scale):
-    """
-    Get tf distribution given loc and scale
-    """
-    return MultivariateNormalTriL(loc=loc, scale_tril=scale)
-    
   def _build(self):
     """
     Build the NormalTriLNode
@@ -499,7 +499,6 @@ class LDSNode(NormalNode):
     xdim = self.xdim
     scope_suffix = "_A"
     oshape = [xdim, xdim]
-#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       eye = np.eye(xdim, dtype=np.float64)
       eye = tf.constant_initializer(eye)
@@ -507,9 +506,6 @@ class LDSNode(NormalNode):
                           shape=oshape,
                           dtype=tf.float64,
                           initializer=eye)
-#       A = tf.expand_dims(A, axis=0)
-#       A = tf.tile(A, dummy_bsz) 
-#       A.set_shape([1, xdim, xdim]) # tf cannot deduce the shape here
       print("A", A)
     return A, ()
     
@@ -570,7 +566,7 @@ class LDSNode(NormalNode):
       
   def _sample(self, **pars):
     """
-    Change this method if more efficient way to sample than tensorflow's
+    TODO: Change this method if more efficient way to sample than tensorflow's
     default.
     """
     if 'dist' in pars:
@@ -676,13 +672,15 @@ class LLDSNode(NormalNode):
       _input = islot_to_itensor
     else:
       _input = self._islot_to_itensor
+    prev_state = _input[0]['main']
+    print("prev_state", prev_state)
     _input = self.concat_inputs(_input)
       
     Alinear, _ = self.build_output('Alinear')
-    A, _ = self.build_A(_input, Alinear)
-    loc, _ = self.build_loc(_input, A)
-    prec, output = self.build_output('prec')
-    scale = output[0]
+    A, _ = self.build_output('A', _input, Alinear)
+    loc, _ = self.build_output('loc', prev_state, A)
+    prec, sec_output = self.build_output('prec')
+    scale = sec_output[0]
 
     dist = self.build_dist(loc, scale)
     samp, _ = self.build_output('main', loc=loc, scale=scale, dist=dist)
@@ -732,7 +730,6 @@ class LLDSNode(NormalNode):
     xdim = self.xdim
     scope_suffix = "_Alinear"
     oshape = [xdim, xdim]
-#     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
     with tf.variable_scope(self.name + scope_suffix, reuse=tf.AUTO_REUSE):
       eye = np.eye(xdim, dtype=np.float64)
       eye = tf.constant_initializer(eye)
@@ -740,10 +737,6 @@ class LLDSNode(NormalNode):
                           shape=oshape,
                           dtype=tf.float64,
                           initializer=eye)
-#       A = tf.expand_dims(A, axis=0)
-#       A = tf.tile(A, dummy_bsz) 
-#       A.set_shape([1, xdim, xdim]) # tf cannot deduce the shape here
-#       print("Alinear", A)
     return Al, ()
 
   def build_A(self, _input, Alinear):
@@ -789,12 +782,11 @@ class LLDSNode(NormalNode):
       
       # Reshape
       B_shape = input_shape[:-1] + [xdim, xdim]
-      B = tf.reshape(B, shape=B_shape)
+      B = tf.reshape(B, shape=B_shape, name='B')
 
       for _ in input_shape[r-2::-1]:
         Alinear = tf.expand_dims(Alinear, axis=-3)
 
-#       B_Nxdxd = tf.reshape(B, [-1, xdim, xdim], name='B')
       A = alpha*B + Alinear # Broadcast Alinear
       
       return A, (B,)
@@ -820,21 +812,14 @@ class LLDSNode(NormalNode):
     oshape = [xdim, xdim]
 #     dummy_bsz = tf.concat([self.builder.dummy_bsz, [1, 1]], axis=0)
     with tf.variable_scope(self.name+scope_suffix, reuse=tf.AUTO_REUSE):
-      eye = np.eye(xdim, dtype=np.float64)
-#       zeros_init = tf.constant_initializer(np.array(0.0, dtype=np.float64))
-      eye_init = tf.constant_initializer(eye)
-#       eye_init = eye + tf.get_variable('z',
-#                                        shape=oshape,
-#                                        dtype=tf.float64,
-#                                        initializer=zeros_init)
+#       eye = np.eye(xdim, dtype=np.float64)
+#       eye_init = tf.constant_initializer(eye)
+      eye_init = tf.eye(self.xdim, dtype=tf.float64)
       eye_init = tf.get_variable('eye_init',
-                                       shape=oshape,
-                                       dtype=tf.float64,
-                                       initializer=eye_init)
+#                                  shape=oshape,
+#                                  dtype=tf.float64,
+                                 initializer=eye_init)
       invscale = tf.linalg.band_part(eye_init, -1, 0)
-#       invscale = tf.expand_dims(invscale, axis=0)
-#       invscale = tf.tile(invscale, dummy_bsz)
-#       invscale.set_shape([None, xdim, xdim]) # tf cannot deduce the shape here
       prec = tf.matmul(invscale, invscale, transpose_b=True)
 
       scale = tf.matrix_inverse(invscale) # uses that inverse of LT is LT

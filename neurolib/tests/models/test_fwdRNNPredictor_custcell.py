@@ -226,7 +226,7 @@ class CustomCellTrainTest(tf.test.TestCase):
     builder.addDirectedLink(ev1, inn1, islot=0)
     
     rnn = PredictorRNN(builder=builder)
-    rnn.train(dataset, num_epochs=20)
+    rnn.train(dataset, num_epochs=10)
 
 
     

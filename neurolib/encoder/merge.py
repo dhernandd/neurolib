@@ -313,9 +313,12 @@ class MergeNormals(MergeNode):
       for islot in range(self.num_expected_inputs):
         for loc_sc_tuple in self.node_list_tuples[islot]:
           this_loc = _input[islot][loc_sc_tuple[0]]
-          this_sc = _input[islot][loc_sc_tuple[1]]
-          
           this_loc = tf.expand_dims(this_loc, axis=2)
+          
+          sh = infer_shape(this_loc)
+          this_sc = _input[islot][loc_sc_tuple[1]]
+          this_sc = match_tensor_shape(sh, this_sc, 3)
+          
           this_cov = tf.matmul(this_sc, this_sc, transpose_b=True)
           
           locs.append(this_loc)
@@ -421,7 +424,8 @@ class MergeSeqsNormalwNormalEv(MergeNode):
     """
     Update the node directives
     """
-    this_node_dirs = {'outputname_1' : 'loc',
+    this_node_dirs = {'usett' : False,
+                      'outputname_1' : 'loc',
                       'outputname_2' : 'scaled',
                       'outputname_3' : 'scaleoffd'}
     this_node_dirs.update(dirs)
@@ -488,23 +492,18 @@ class MergeSeqsNormalwNormalEv(MergeNode):
       evseq_invQ_oslot = self.node_list_tuples[islot][0][0]
       evseq_A_oslot = self.node_list_tuples[islot][0][1]
       
-      # LDS specific
+      # works for LDS and VIND specific
       invQ = _input[islot][evseq_invQ_oslot]
       A = _input[islot][evseq_A_oslot]
-#       invQ_NxTxdxd, A_NxTxdxd = self._expand_dims_invQ_A(main_sh, invQ, A)
       invQ_NxTxdxd = match_tensor_shape(main_sh, invQ, 4)
       A_NxTxdxd = match_tensor_shape(main_sh, A, 4)
-#       for _ in main_sh[r-2::-1]:
-#         invQ = tf.expand_dims(invQ, axis=-3)
-#         A = tf.expand_dims(A, axis=-3)
-#       invQ_NxTxdxd = tf.tile(invQ, main_sh[:-1] + [1, 1])
-#       A_NxTxdxd = tf.tile(A, main_sh[:-1] + [1, 1])
       
       # Get input from the evolution sequence prior
       islot = 2
       prior_invQ_oslot = self.node_list_tuples[islot][0][0]
       
-      Q0scale_Nxdxd = _input[islot][prior_invQ_oslot]
+      Q0scale_dxd = _input[islot][prior_invQ_oslot]
+      Q0scale_Nxdxd = match_tensor_shape(main_sh, Q0scale_dxd, 3)
       print("Q0scale_Nxdxd", Q0scale_Nxdxd)
       Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
       invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
@@ -519,13 +518,13 @@ class MergeSeqsNormalwNormalEv(MergeNode):
 
       # compute the off-diagonal blocks of full precision K:
       #     K(z)_{i,i+1} = -A(z)^T*Q^-1,     for i in {1,..., T-2}
-      use_tt = False
+      usett = self.directives.usett # use the transpose trick?
       AinvQ_NTm1xdxd = -tf.matmul(A_NTm1xdxd, invQ_NTm1xdxd,  #pylint: disable=invalid-unary-operand-type
-                                   transpose_a=use_tt)  
+                                   transpose_a=usett)  
       # The diagonal blocks of K up to T-1:
       #     K(z)_ii = A(z)^T*Qq^{-1}*A(z) + Qt^{-1},     for i in {1,...,T-1 }
       AinvQA_NTm1xdxd = (invQ0Q_NTm1xdxd - 
-                         tf.matmul(AinvQ_NTm1xdxd, A_NTm1xdxd, transpose_b=not use_tt))
+                         tf.matmul(AinvQ_NTm1xdxd, A_NTm1xdxd, transpose_b=not usett))
                          
       AinvQA_NxTm1xdxd = tf.reshape(AinvQA_NTm1xdxd,
                                      [Nsamps, NTbins-1, xDim, xDim]) 

@@ -83,15 +83,21 @@ class CustomNode(InnerNode):
     self.in_builder = in_builder
     self.nodes = in_builder.nodes
 
-    self._is_built = False
+    # shapes
+    self.oshapes = self._get_all_oshapes()
     
     # init list of free i/o slots
     self._islot_to_itensor = [{} for _ in range(self.num_expected_inputs)]
     self.free_oslots = list(range(self.num_expected_outputs))
     self.free_islots = list(range(self.num_expected_inputs))
 
+    self._is_built = False
+    
   def _update_directives(self, **directives):
     """
+    Update the CustomNode directives
+    
+    TODO: Define a CustomNode directives object
     """
     this_node_dirs = {}
     this_node_dirs.update(directives)
@@ -101,7 +107,7 @@ class CustomNode(InnerNode):
     """
     TODO!
     """
-    pass
+    return {}
     
   def addInner(self, 
                state_sizes,
@@ -144,6 +150,9 @@ class CustomNode(InnerNode):
     in_builder.output_nodes[innernode_name] = node 
     in_builder._oslot_to_inner_node_oslot[oslot] = (innernode_name, inode_oslot)
     
+    # fill self.oshapes
+    self.oshapes[oslot] = node.oshapes[inode_oslot]
+    
   def addDirectedLink(self, enc1, enc2, islot):
     """
     Add a DirectedLink to the CustomNode inner graph
@@ -154,52 +163,38 @@ class CustomNode(InnerNode):
       enc2 = self.in_builder.nodes[enc2]
     
     self.in_builder.addDirectedLink(enc1, enc2, islot=islot)
-    
-  @property
-  def dist(self):
-    """
-    If self has only one OutputNode `onode` and it is a distribution, make
-    `self.dist = onode.dist`. Otherwise, raise AttributeError
-    """
-    in_builder = self.in_builder
-    if self.num_expected_outputs == 1:
-      print("self._oslot_to_inner_node_oslot", in_builder._oslot_to_inner_node_oslot)
-      inner_onode_name = in_builder._oslot_to_inner_node_oslot['main'][0]
-      inner_onode = self.in_builder.nodes[inner_onode_name]
-      try:
-        return inner_onode.dist
-      except AttributeError:
-        raise AttributeError("The output of this CustomNode is not random")
-    else:
-      raise AttributeError("`dist` attribute not defined for CustomNodes "
-                           "with self.num_outputs > 1")
-    
+  
   def __call__(self, *inputs):
     """
     Call the CustomNode
     """
     if not inputs:
       raise ValueError("Inputs are mandatory for the CustomNode")
-    print("cust, inputs", inputs)
     islot_to_itensor = [{'main' : ipt} for ipt in inputs]
     return self.build_outputs(islot_to_itensor)
 
   def build_outputs(self, islot_to_itensor=None):
     """
-    Get a sample from the CustomNode
+    Build the CustomNode's outputs
     """
     if islot_to_itensor is not None:
       _input = islot_to_itensor
     else:
       _input = self._islot_to_itensor
     
-    print("cust; self.oslot_names", self.oslot_names)
     result = self.in_builder.build_outputs(_input,
                                            self.oslot_names)
     return result
 
   def build_output(self, oname, *args, **kwargs):
     """
+    Build a single output
+    
+    TODO: This is wrong. This method requires an algorithm that, starting from
+    the oslot, tracks back, recording all the oslots that need to be built up to
+    the CustomNode inputs. Then it should go forward the graph building them one
+    by one. It is possible that while building the full CustomNode in
+    build_outputs I can store something that simplifies writing this method
     """
     if oname in self.in_builder._oslot_to_inner_node_oslot:
       inner_name = self.in_builder._oslot_to_inner_node_oslot[oname][0]
@@ -217,23 +212,53 @@ class CustomNode(InnerNode):
       self.fill_oslot_with_tensor(oslot, tensor)
     self._is_built = True 
 
+  @property
+  def dist(self):
+    """
+    If self has only one OutputNode `onode` and it is a distribution, make
+    `self.dist = onode.dist`. Otherwise, raise AttributeError
+    """
+    in_builder = self.in_builder
+    if self.num_expected_outputs == 1:
+      inner_onode_name = in_builder._oslot_to_inner_node_oslot['main'][0]
+      inner_onode = in_builder.nodes[inner_onode_name]
+      try:
+        return inner_onode.dist
+      except AttributeError:
+        raise AttributeError("The output of this CustomNode is not random")
+    else:
+      raise AttributeError("`dist` attribute not defined for CustomNodes "
+                           "with self.num_outputs > 1")
+    
   def entropy(self):
     """
     Get the CustomNode entropy
     """
-    print("self.dist", self.dist)
-    try:
-      return self.dist.entropy()
-    except AttributeError:
-      raise AttributeError("No distribution (`dist` attribute) has been "
-                           "associated to this CustomNode")
-
+    in_builder = self.in_builder
+    if self.num_expected_outputs == 1:
+      inner_onode_name = in_builder._oslot_to_inner_node_oslot['main'][0]
+      inner_onode = in_builder.nodes[inner_onode_name]
+      try:
+        return inner_onode.entropy()
+      except AttributeError:
+        raise AttributeError("The output of this CustomNode is not random")
+    else:
+      raise AttributeError("`dist` attribute not defined for CustomNodes "
+                           "with self.num_outputs > 1")
+    
   def log_prob(self, Y):
     """
     Get the CustomNode loglikelihood
     """
-    try:
-      return self.dist.log_prob(Y)
-    except AttributeError:
-      raise AttributeError("No distribution (`dist` attribute) has been "
-                           "associated to this CustomNode")
+    in_builder = self.in_builder
+    if self.num_expected_outputs == 1:
+      inner_onode_name = in_builder._oslot_to_inner_node_oslot['main'][0]
+      inner_onode = in_builder.nodes[inner_onode_name]
+      try:
+        return inner_onode.log_prob(Y)
+      except AttributeError:
+        raise AttributeError("The output of this CustomNode is not random")
+    else:
+      raise AttributeError("`dist` attribute not defined for CustomNodes "
+                           "with self.num_outputs > 1")
+    

@@ -15,7 +15,7 @@
 # ==============================================================================
 import tensorflow as tf
 
-from neurolib.encoder import _globals as dist_dict
+from neurolib.encoder import MultivariateNormalLinearOperator  # @UnresolvedImport
 from neurolib.encoder.anode import ANode
 from abc import abstractmethod
 from neurolib.utils.directives import NodeDirectives
@@ -77,7 +77,8 @@ class InputNode(ANode):
     # shapes
     self.oshapes = self._get_all_oshapes()
     self.D = self.get_state_size_ranks()
-    self.xdim = self.state_sizes[0][0]
+    if len(self.state_sizes[0]) == 1:
+      self.xdim = self.state_sizes[0][0]
       
   def _update_directives(self, **directives):
     """
@@ -162,8 +163,8 @@ class PlaceholderInputNode(InputNode):
     mx_stps = self.max_steps
     const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
     
-    xdim = self.state_sizes[0][0]
-    return {self.oslot_names[0] : const_sh + [xdim]}
+    ss = self.state_sizes[0]
+    return {self.oslot_names[0] : const_sh + ss}
     
   def __call__(self, *inputs):
     """
@@ -279,10 +280,10 @@ class NormalInputNode(InputNode):
     mx_stps = self.max_steps
     const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
     
-    xdim = self.state_sizes[0][0]
-    return {self.oslot_names[0] : const_sh + [xdim],
-            self.oslot_names[1] : const_sh + [xdim],
-            self.oslot_names[2] : const_sh + [xdim, xdim]}
+    ss = self.state_sizes[0]
+    return {self.oslot_names[0] : const_sh + ss,
+            self.oslot_names[1] : const_sh + ss,
+            self.oslot_names[2] : const_sh + list(ss*2)}
   
   def __call__(self, *inputs):
     """
@@ -299,43 +300,86 @@ class NormalInputNode(InputNode):
     if islot_to_itensor is not None:
       raise ValueError("`InputNode.build_outputs` must have no arguments")
 
-    # directives
+    loc, _ = self.build_output('loc')
+    scale, output = self.build_output('scale')
+    
+    dist = self.build_dist(loc, scale=output[0])
+    samp, _ = self.build_output('main', dist=dist)
+    
+    return samp, loc, scale, dist
+
+  def build_dist(self, loc, scale):
+    """
+    Build dist
+    """
+    return MultivariateNormalLinearOperator(loc=loc, scale=scale)
+    
+  def build_output(self, oname, **kwargs):
+    """
+    Build a single output by name
+    """
+    if oname == 'loc':
+      return self.build_loc()
+    elif oname == 'scale':
+      return self.build_scale()
+    elif oname == 'main':
+      return self.build_main(**kwargs)
+
+  def build_loc(self):
+    """
+    Build the loc output
+    """
     dirs = self.directives
     dtype = self.type_dict[dirs.dtype]
-    
-    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
-      if self.is_sequence and self.max_steps is None:
-        raise NotImplementedError("")
+    with tf.variable_scope(self.name + '_loc', reuse=tf.AUTO_REUSE):
+      li = tf.zeros(self.state_sizes[0], dtype=dtype)
+      loc = tf.get_variable('loc',
+                            dtype=dtype,
+                            initializer=li)
+      if self.is_sequence:
+        loc = tf.tile(tf.expand_dims(loc, axis=0), [self.max_steps, 1])
+        loc = tf.tile(tf.expand_dims(loc, axis=0),
+                      tf.concat([self.dummy_bsz, [1, 1]], axis=0))
+        loc.set_shape([None, self.max_steps] + self.state_sizes[0])
       else:
-        li = tf.zeros([self.xdim], dtype=dtype)
-        loc_dist = tf.get_variable('loc',
-                                   dtype=dtype,
-                                   initializer=li)
-        loc = tf.tile(loc_dist, self.dummy_bsz)
-        loc = tf.reshape(loc, [-1, self.xdim])
-        
+        loc = tf.tile(tf.expand_dims(loc, axis=0),
+                      tf.concat([self.dummy_bsz, [1]], axis=0))
+        loc.set_shape([None] + self.state_sizes[0])
+    
+    return loc, ()
+                                                              
+  def build_scale(self):
+    """
+    Build the scale output
+    """    
+    dirs = self.directives
+    dtype = self.type_dict[dirs.dtype]
+    with tf.variable_scope(self.name + '_scale', reuse=tf.AUTO_REUSE):
+      if len(self.state_sizes[0]) > 1:
+        raise NotImplementedError
+      else:
         si = tf.eye(self.xdim, dtype=dtype)
         scale = tf.get_variable('scale',
                                 dtype=dtype,
                                 initializer=si)
-        scale_dist = tf.linalg.LinearOperatorFullMatrix(scale)
-        scale = tf.reshape(scale, [-1])
-        scale = tf.tile(scale, self.dummy_bsz)
-        scale = tf.reshape(scale, [-1, self.xdim, self.xdim])
+        if self.is_sequence:
+          raise NotImplementedError
+        else:
+          scale_dist = tf.linalg.LinearOperatorFullMatrix(scale)
+
+    return scale, (scale_dist,)
     
-    self.dist = dist = dist_dict['MultivariateNormalLinearOperator'](loc=loc_dist,
-                                                                     scale=scale_dist)
-    samp = dist.sample(sample_shape=self.dummy_bsz)
-    if not self.is_sequence:
-      samp.set_shape([None, self.xdim]) # set the known shape
-      
-    return samp, loc, scale
+  def build_main(self, dist, **kwargs):
+    """
+    Build the main output
+    """
+    return dist.sample(**kwargs), ()
 
   def _build(self):
     """
     Build the NormalInputNode
     """
-    samp, loc, scale = self.build_outputs()
+    samp, loc, scale, self.dist = self.build_outputs()
     
     # Fill the oslots
     self.fill_oslot_with_tensor(0, samp)

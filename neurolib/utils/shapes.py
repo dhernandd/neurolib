@@ -53,6 +53,8 @@ def split_first_two_dims(tensor, dim_0, dim_1):
     return tf.reshape(tensor, new_shape)
 
 def match_tensor_shape(shape, tensor, final_rank):
+  """
+  """
   rt = len(infer_shape(tensor))
   if rt == final_rank:
     return tensor
@@ -60,5 +62,6 @@ def match_tensor_shape(shape, tensor, final_rank):
   for _ in range(dims_to_add):
     tensor = tf.expand_dims(tensor, axis=0)
   tensor = tf.tile(tensor, shape[:dims_to_add] + [1]*rt)
+      
   return tensor
     

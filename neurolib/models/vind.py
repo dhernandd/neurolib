@@ -153,6 +153,7 @@ class VIND(Model):
                                 'rec_loc_activations' : 'leaky_relu',
                                 'rec_loc_netgrowrate' : 1.0,
                                 'rec_shareparams' : False,
+                                'rec_usett' : True,
                                 'gen_wconstprecision' : True,
                                 'trainer' : 'gd'})
     this_model_dirs.update({'tr_optimizer' : 'adam',
@@ -162,7 +163,7 @@ class VIND(Model):
             
   def build(self):
     """
-    Build the fLDS
+    Build VIND
     """
     builder = self.builder
     ydim = self.ydim

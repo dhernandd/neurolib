@@ -17,12 +17,13 @@ import unittest
 import tensorflow as tf
 
 from neurolib.builders.static_builder import StaticBuilder
+from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 8
 range_from = 0
-range_to = 8
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
 class StaticModelBuilderBasicTest(tf.test.TestCase):
@@ -51,6 +52,29 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
                      "the InputNode has not been assigned correctly")
     self.assertEqual(in1.num_declared_inputs, 0, "The number of outputs of "
                      "the InputNode has not been assigned correctly")
+    
+  @unittest.skipIf(0 not in tests_to_run, "Skipping")
+  def test_init1(self):
+    """
+    Test adding basic InputNode
+    """
+    print("\nTest 0: Initialization")
+    builder = StaticBuilder(scope='Build')
+    in1_name = builder.addInput(state_size=10,
+                                iclass=NormalInputNode)
+    in1 = builder.input_nodes[in1_name]
+    
+    print('Node keys in builder:', list(builder.input_nodes.keys()))
+    self.assertEqual(in1.label, 0, "The label has not been assigned correctly")
+    self.assertEqual(builder.num_nodes, 1, "The number of nodes has not been "
+                     "assigned correctly")
+    self.assertEqual(in1.num_declared_outputs, 0, "The number of outputs of "
+                     "the InputNode has not been assigned correctly")
+    self.assertEqual(in1.num_declared_inputs, 0, "The number of outputs of "
+                     "the InputNode has not been assigned correctly")
+    builder.build()
+    
+    print('in1._oslot_to_otensor', in1._oslot_to_otensor)
     
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_addInner(self):

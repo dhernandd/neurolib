@@ -303,7 +303,5 @@ class ANode(abc.ABC):
     """
     Build outputs that belong to the model, not to the node 
     """
-    pass
-  
-    
+    return
   

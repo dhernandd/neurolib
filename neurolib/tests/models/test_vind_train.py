@@ -24,14 +24,10 @@ from neurolib.models.vind import VIND
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 1
-range_from = 0
-range_to = 1
+# NUM_TESTS : 2
+range_from = 1
+range_to = 2
 tests_to_run = list(range(range_from, range_to))
-
-fname = '/datadict_gaussianobs2D'
-with open(path + fname, 'rb') as f:
-  datadict = pickle.load(f)
 
 
 class VINDTestTrain(tf.test.TestCase):
@@ -46,7 +42,12 @@ class VINDTestTrain(tf.test.TestCase):
   def test_train(self):
     """
     """
-    print("\nTest 1: fLDS build")
+    fname = '/datadict_gaussianobs2D'
+    with open(path + fname, 'rb') as f:
+      datadict = pickle.load(f)
+
+
+    print("\nTest 1: VIND train")
 
     dataset = {}
     Ytrain = datadict['Ytrain']
@@ -60,7 +61,28 @@ class VINDTestTrain(tf.test.TestCase):
                 state_dim=[[2]],
                 max_steps=max_steps,
                 save_on_valid_improvement=False)
-    vind.train(dataset, num_epochs=10)
+    vind.train(dataset, num_epochs=5)
+    
+  @unittest.skipIf(1 not in tests_to_run, "Skipping")
+  def test_train_wi(self):
+    """
+    """
+    fname = '/datadict_pendulum_wi'
+    with open(path + fname, 'rb') as f:
+      datadict = pickle.load(f)
+
+    print("\nTest 1: VIND train winputs")
+
+    Ytrain = datadict['train_Observation']
+    Yshape = Ytrain.shape
+    print("Yshape", Yshape)
+    max_steps, input_dims = Yshape[-2], Yshape[-1]
+      
+    vind = VIND(input_dims=[[input_dims], [1]],
+                state_dim=[[2]],
+                max_steps=max_steps,
+                save_on_valid_improvement=False)
+    vind.train(datadict, num_epochs=5)
     
 
 if __name__ == '__main__':

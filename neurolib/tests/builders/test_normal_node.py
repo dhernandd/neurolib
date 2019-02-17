@@ -25,8 +25,8 @@ from neurolib.builders.sequential_builder import SequentialBuilder
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 6
-range_from = 0
-range_to = 6
+range_from = 6
+range_to = 7
 tests_to_run = list(range(range_from, range_to))
 
 class NormalNodeTest(tf.test.TestCase):
@@ -124,8 +124,6 @@ class NormalNodeTest(tf.test.TestCase):
     builder = SequentialBuilder(scope='Main',
                                 max_steps=30)
     is1 = builder.addInputSequence([[3]])
-#     ins1 = builder.addInnerSequence([[3]],
-#                                     node_class=LDSNode)
     ins1 = builder.addInner([[3]],
                                 node_class=LDSNode)
     
@@ -149,7 +147,7 @@ class NormalNodeTest(tf.test.TestCase):
     builder.build()
   
   @unittest.skipIf(5 not in tests_to_run, "Skipping")
-  def test_LLDSNode_init(self):
+  def test_LLDSNode_build(self):
     """
     Test LLDSNode initialization
     """
@@ -176,6 +174,28 @@ class NormalNodeTest(tf.test.TestCase):
                                   oslot='A',
                                   feed_dict={'Builder/In_main:0' : z})
     print("output", opt)
+
+  @unittest.skipIf(6 not in tests_to_run, "Skipping")
+  def test_LLDSNode_build2(self):
+    """
+    Test LLDSNode initialization
+    """
+    builder = SequentialBuilder(max_steps=30,
+                                scope='Builder')
+    i1 = builder.addInput([[3]], name='In1')
+    i2 = builder.addInput([[4]], name='In2')
+    in1 = builder.addInner([[3]],
+                           node_class=LLDSNode,
+                           num_inputs=2,
+                           name='LLDS')
+    builder.addDirectedLink(i1, in1, islot=0)
+    builder.addDirectedLink(i2, in1, islot=1)
+    
+    builder.build()
+    in1, i1 = builder.nodes[in1], builder.nodes[i1]
+    print("{}._oslot_to_otensor:".format(i1.name), i1._oslot_to_otensor)
+    print("{}._oslot_to_otensor:".format(in1.name), in1._oslot_to_otensor)
+    
 
 
 if __name__ == '__main__':
