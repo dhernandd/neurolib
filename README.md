@@ -7,11 +7,11 @@
 
 A good place to start are the tutorials at https://github.com/dhernandd/neurolib/tree/master/neurolib/tutorials
 
-Soon to be released:
+### Soon to be released:
 
 - Generic RNN-based models
 
-In the pipeline
+### In the pipeline
 
 - HMMs
 - Switching LDS
