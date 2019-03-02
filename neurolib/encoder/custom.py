@@ -15,9 +15,170 @@
 # ==============================================================================
 from neurolib.encoder.inner import InnerNode
 from neurolib.encoder.deterministic import DeterministicNNNode  # @UnusedImport
+from neurolib.encoder.deterministic import DeterministicNN  # @UnusedImport
 from neurolib.utils.directives import NodeDirectives
 
 # pylint: disable=bad-indentation, no-member, protected-access
+
+class CustomNode2(InnerNode):
+  """
+  """
+  def __init__(self,
+               out_builder,
+               in_builder,
+               inputs,
+               num_outputs,
+               is_sequence=False,
+               name=None,
+               name_prefix='Cust',
+               **dirs):
+    # set name
+    name_prefix = name_prefix or 'Cust'
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+
+    # outputs
+    self.num_expected_outputs = num_outputs
+        
+    super(CustomNode2, self).__init__(out_builder,
+                                     is_sequence,
+                                     name_prefix=name_prefix,
+                                     **dirs)
+    
+    # inputs
+    self.inputs = inputs
+    self.num_expected_inputs = len(self.inputs)
+    
+    # directives object
+    self.directives = NodeDirectives(self.directives)
+    self.oslot_names = self.directives.output_names
+
+    # inner builder
+    self.in_builder = in_builder
+    self.nodes = in_builder.nodes
+
+    # init list of free i/o slots
+    self._islot_to_itensor = [{} for _ in range(self.num_expected_inputs)]
+    self.free_oslots = list(range(self.num_expected_outputs))
+    self.free_islots = list(range(self.num_expected_inputs))
+
+    self._is_built = False
+    
+  def _update_directives(self, **directives):
+    """
+    Update the CustomNode directives
+    
+    TODO: Define a CustomNode directives object
+    """
+    this_node_dirs = {'outputname_'+str(i) : 'output'+str(i) for i 
+                      in range(self.num_expected_outputs)}
+    this_node_dirs.update(directives)
+    super(CustomNode2, self)._update_directives(**this_node_dirs)
+    
+  def addTransformInner(self, 
+                        state_sizes,
+                        main_inputs,
+                        node_class=DeterministicNN,
+                        lmbda=None,
+                        name=None,
+                        name_prefix=None,
+                        **dirs):
+    """
+    Add an InnerNode to the CustomNode
+    
+    An inner node is input for Custom if all its inputs are external
+    """
+    in_builder = self.in_builder
+    
+    node_name = in_builder.addTransformInner(state_sizes,
+                                             main_inputs=main_inputs,
+                                             node_class=node_class,
+                                             lmbda=lmbda,
+                                             is_sequence=False,
+                                             name=name,
+                                             name_prefix=name_prefix,
+                                             **dirs)
+    
+    # An inner node is an input for the inner builder if all its inputs are ints
+    if all([isinstance(islot, int) for islot in main_inputs]):
+      node = in_builder.nodes[node_name]
+      in_builder.input_nodes[node_name] = node
+      
+    return node_name
+  
+  def declareOslot(self, oslot, innernode_name, inode_oslot_name):
+    """
+    Declare an inner oslot as an output to the CustomNode 
+    """
+    in_builder = self.in_builder
+    
+    node = in_builder.nodes[innernode_name]
+    in_builder.output_nodes[innernode_name] = node 
+    in_builder._oslot_to_inner_node_oslot[oslot] = (innernode_name, inode_oslot_name)
+    
+    # fill self.oshapes
+#     self.oshapes[oslot] = node.oshapes[inode_oslot_name]
+
+  def _get_all_oshapes(self):
+    """
+    """
+    InnerNode._get_all_oshapes(self)
+    
+  def __call__(self, *inputs):
+    """
+    """
+    raise NotImplementedError
+        
+  def _build(self):
+    """
+    Build the Custom Node
+    
+    TODO: Prepare inputs
+    TODO: Build output by output
+    
+    """    
+    # Fill Custom Node oslots
+    self._fill_inner_islots()
+    for node_list in self.in_builder.islot_to_innernode_names:
+      for node_name in node_list:
+        node = self.in_builder.nodes[node_name]
+        print("cuts, node._islot_to_itensor", node._islot_to_itensor)
+      
+    rslt = self.in_builder.build_outputs2()
+    rslt = tuple([rslt[oslot] for oslot in range(self.num_expected_outputs)])
+#     rslt = tuple([rslt[oslot] for oslot in self.oslot_names])
+    
+    print("rslt", rslt)
+#     self.build_outputs()
+    
+    self._is_built = True 
+
+  def build_outputs(self, **inputs):
+    """
+    Build the CustomNode's outputs
+    """
+    for oslot_name in self.output_names:
+      self.build_output(oslot_name, **inputs)
+
+  def build_output(self, oslot_name, **inputs):
+    """
+    """
+    inputs = self.prepare_inputs(**inputs)
+    return self.in_builder.build_output(oslot_name, **inputs)
+  
+  def _fill_inner_islots(self):
+    """
+    """
+    for islot, elem in enumerate(self._islot_to_itensor):
+      for node_name in self.in_builder.islot_to_innernode_names[islot]:
+        node = self.in_builder.nodes[node_name]
+        inner_islot = node.islot_to_input.index(islot)
+        node._islot_to_itensor[inner_islot] = elem
+        
+        
+        
+
+  
+    
 
 class CustomNode(InnerNode):
   """

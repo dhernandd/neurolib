@@ -1,8 +1,6 @@
-## Neurolib
+XC## Neurolib
 
-Website: https://cunningham-lab.github.io/neurolib/ (in construction
-
-### A machine learning library for neuroscientists
+Website: https://cunningham-lab.github.io/neurolib/
 
 ## Requirements
 
@@ -16,8 +14,7 @@ In addition, up-to-date versions of numpy, scipy and matplotlib are expected.
 
 ## Usage
 
-This library is at the moment in an alpha stage. It is recommended to use this code starting from the tests folder. As usual, to run any specific test, first add the root directory of neurolib to your PYTHONPATH:
+This library is at the moment in an alpha stage. Tutorials for implemented models can be found in the tutorials directory
 
-$ export PYTHONPATH=path_to_neurolib:PYTHONPATH
+https://github.com/cunningham-lab/neurolib/tree/master/neurolib/tutorials
 
-Please report bugs.

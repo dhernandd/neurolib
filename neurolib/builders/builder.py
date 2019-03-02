@@ -20,6 +20,8 @@ from neurolib.encoder.input import PlaceholderInputNode
 
 from neurolib.encoder.deterministic import DeterministicNNNode #@UnusedImport
 from neurolib.utils.utils import check_name
+from neurolib.encoder.deterministic import DeterministicNN
+from neurolib.encoder.merge import MergeSeqsNormalwNormalEv
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -96,6 +98,8 @@ class Builder():
                name=None,
                **dirs):
     """
+    TODO: Change iclass arg to node_class for consistency  
+    
     Add an InputNode to the Encoder Graph
     
     Args:
@@ -121,10 +125,48 @@ class Builder():
     self._label_to_node[in_node.label] = in_node
     
     return name
+  
+  @check_name
+  def addTransformInner(self,
+                        state_size,
+                        main_inputs,
+                        lmbda=None,
+                        node_class=DeterministicNN,
+                        name=None,
+                        name_prefix=None,
+                        **dirs):
+    """
+    Add a Transform InnerNode
+    """
+    if isinstance(main_inputs, str):
+      main_inputs = [main_inputs]
+    num_inputs = len(main_inputs)
+    if len(main_inputs) < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_inputs))
+    
+    self.add_node_to_model_graph()
+    
+    if isinstance(node_class, str):
+      node_class = self.innernode_dict[node_class]
+    print("builder, main_inputs", main_inputs)
+    enc_node = node_class(self,
+                          state_size,
+                          main_inputs=main_inputs,
+                          lmbda=lmbda,
+                          name=name,
+                          name_prefix=name_prefix,
+                          **dirs)
+    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+    
+    self.add_directed_links(main_inputs, enc_node)
+      
+    return enc_node.name
     
   @check_name
   def addInner(self,
                state_sizes,
+               *args,
                num_inputs=1,
                node_class=DeterministicNNNode,
                is_sequence=False,
@@ -159,6 +201,7 @@ class Builder():
       node_class = self.innernode_dict[node_class]
     enc_node = node_class(self,
                           state_sizes,
+                          *args,
                           num_inputs=num_inputs,
                           is_sequence=is_sequence,
                           name=name,
@@ -167,30 +210,45 @@ class Builder():
     self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
       
     return enc_node.name
-  
-#   @check_name
-#   def addOutput(self,
-#                 name=None,
-#                 name_prefix=None,
-#                 is_sequence=False):
-#     """
-#     Add an OutputNode to the Encoder Graph
-#     
-#     Args:
-#       name (str): Unique identifier for the Output Node
-#     """
-#     self.add_node_to_model_graph()
-#     
-#     out_node = OutputNode(self,
-#                           name=name,
-#                           name_prefix=name_prefix,
-#                           is_sequence=is_sequence)
-#     name = out_node.name
-#     self.output_nodes[name] = self.nodes[name] = out_node 
-#     self._label_to_node[out_node.label] = out_node
-#     
-#     return name
 
+  def addMergeSeqwDS(self,
+                     seq_inputs,
+                     ds_inputs,
+                     prior_inputs,
+                     merge_class=MergeSeqsNormalwNormalEv,
+                     name=None,
+                     name_prefix=None,
+                     **dirs):
+    """
+    """
+    if isinstance(seq_inputs, str):
+      seq_inputs = [seq_inputs]
+    if isinstance(ds_inputs, str):
+      ds_inputs = [ds_inputs]
+    if isinstance(prior_inputs, str):
+      prior_inputs = [prior_inputs]
+    
+    self.add_node_to_model_graph()
+    
+    merger = merge_class(self,
+                         seq_inputs=seq_inputs,
+                         ds_inputs=ds_inputs,
+                         prior_inputs=prior_inputs,
+                         name=name,
+                         name_prefix=name_prefix,
+                         **dirs)
+    name = merger.name
+    self.nodes[name] = merger
+    self._label_to_node[merger.label] = merger
+    
+    self.add_directed_links(seq_inputs, merger)
+    nsofar = len(seq_inputs)
+    self.add_directed_links(ds_inputs, merger, nsofar)
+    nsofar += len(ds_inputs)
+    self.add_directed_links(prior_inputs, merger, nsofar)
+    
+    return name
+    
   def addMergeNode(self,
                    node_list=None,
                    node_dict=None,
@@ -228,10 +286,10 @@ class Builder():
                       "or type `ANode`")
       
     if islot > node2.num_expected_inputs - 1:
-      raise ValueError("`islot` {} out of range (`num_expected_inputs = {})"
-                       "".format(islot, node2.num_expected_inputs))
+      raise ValueError("`islot` %d out of range (`num_expected_inputs = %d)"
+                       "" %(islot, node2.num_expected_inputs))
     if islot not in node2.free_islots:
-      raise ValueError("`islot` {} has already been assigned.".format(islot))
+      raise ValueError("`islot` %d has already been assigned." %islot)
       
     self.adj_matrix[node1.label][node2.label] = 1
     if node2.label not in self.adj_list[node1.label]: 
@@ -248,6 +306,12 @@ class Builder():
     # cleanup
     node1.update_when_linked_as_node1()
     node2.update_when_linked_as_node2()
+    
+  def add_directed_links(self, inputs, node, start_islot=0):
+    """
+    """
+    for i, inode in enumerate(inputs, start_islot):
+      self.addDirectedLink(inode, node, i)
   
   def make_dummy_fd(self, batch_size):
     """

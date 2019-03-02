@@ -42,6 +42,13 @@ for dist_name in sorted(dir(_distributions)):
 act_fn_dict = {'relu' : tf.nn.relu,
                'leaky_relu' : tf.nn.leaky_relu,
                'None' : None,
-               'softplus' : tf.nn.softplus}
+               'softplus' : tf.nn.softplus,
+               'softmax' : tf.nn.softmax}
+
+initializers_dict = {'xavier' : tf.contrib.layers.xavier_initializer,
+                     'normal' : tf.random_normal_initializer,
+                     'orthogonal' : tf.orthogonal_initializer,
+                     'uniform' : tf.random_uniform_initializer,
+                     'zeros' : tf.zeros_initializer}
 
 layers_dict = {'full' : fully_connected}

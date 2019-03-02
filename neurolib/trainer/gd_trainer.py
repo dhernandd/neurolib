@@ -14,6 +14,7 @@
 #
 # ==============================================================================
 import os
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -23,7 +24,8 @@ from neurolib.trainer.trainer import Trainer
 from neurolib.trainer.costs import (mse, mabsdiff, elbo, 
                                     cross_entropy_with_logits,
                                     entropy, logprob)
-from neurolib.trainer.tr_utils import batch_iterator_from_dataset
+from neurolib.utils.dataset_manip import (get_dataset_batch_size,
+                                          batch_iterator_from_dataset)
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -58,7 +60,6 @@ class GDTrainer(Trainer):
 
   def __init__(self,
                model=None,
-               name=None,
                mode='new',
                restore_dir=None,
                **dirs):
@@ -69,12 +70,12 @@ class GDTrainer(Trainer):
     """
     super(GDTrainer, self).__init__()
     
+    self.model = model
     self.sess = model.sess
     self.save = model.save
     self.mode = mode
-    self.model = model
     self.batch_size = model.batch_size
-    self.name = model.main_scope if name is None else name
+    self.scope = model.main_scope
 
     # Define train ops before savers
     if mode == 'new':
@@ -82,7 +83,7 @@ class GDTrainer(Trainer):
       self.dummies = self.model.builder.dummies
       if self.save:
         root_rslts_dir = model.root_rslts_dir
-        self.rslts_dir = root_rslts_dir + self.name + '/' + addDateTime() + '/'
+        self.rslts_dir = root_rslts_dir + self.scope + '/' + addDateTime() + '/'
         if not os.path.exists(self.rslts_dir):
           os.makedirs(self.rslts_dir)
 
@@ -111,7 +112,8 @@ class GDTrainer(Trainer):
     Update the default directives.
     """
     this_trainer_dirs = {'optimizer' : 'adam',
-                         'lr' : 1e-3}
+                         'lr' : 1e-3,
+                         'wlr_schedule' : False}
     if self.mode == 'new':
       cost_name = self.model.otensor_names['cost']
       cost = tf.get_default_graph().get_tensor_by_name(cost_name)
@@ -126,14 +128,18 @@ class GDTrainer(Trainer):
     directives = self.directives
     cost = self.model.cost
     optimizer_class = self.opt_dict[directives['optimizer']]
-    opt = optimizer_class(self.directives['lr'])
+    
+    # TODO: Put inside model scope??
+    init_lr = self.directives['lr']
+    lr = tf.get_variable('lr', dtype=tf.float32, initializer=init_lr)
+    opt = optimizer_class(lr)
     
     self.train_step = tf.get_variable("global_step", [], tf.int64,
                                       tf.zeros_initializer(),
                                       trainable=False)
     self.train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                         scope=tf.get_variable_scope().name)
-    print('Scope', tf.get_variable_scope().name)
+    print('\nScope:', self.scope)
     for i in range(len(self.train_vars)):
       shape = self.train_vars[i].get_shape().as_list()
       print("    ", i, self.train_vars[i].name, shape)
@@ -151,7 +157,7 @@ class GDTrainer(Trainer):
     """
     Splits the dataset dictionary into train, validation and test datasets.
     """
-    scope = self.name
+    scope = self.scope
     train_dataset = {}
     valid_dataset = {}
     test_dataset = {}
@@ -171,36 +177,6 @@ class GDTrainer(Trainer):
             'valid' : valid_dataset, 
             'test' : test_dataset}
     
-  def add_dummies_to_dataset(self, dataset, batch_size=None):
-    """
-    Make a feed_dict for sess.run from a dataset.
-    
-    In particular, add inputs for all the dummy variables defined by the Builder
-    associated to this model
-    """
-    for key in self.dummies:
-      dummy_name = self.dummies[key]
-      dataset[dummy_name] = np.array([batch_size], dtype=np.int32)
-      
-    return dataset
-        
-  def update(self, sess, dataset, batch_size):
-    """
-    Perform a single gradient descent update for the variables in this cost.
-    
-    TODO: Document!
-    TODO: Get rid of the feed_dict in favor of tensorflow Queues! Add
-    multithreading capabilities
-    """
-    for key in self.dummies: dataset.pop(key, None)
-    dataset_iter = batch_iterator_from_dataset(dataset,
-                                               batch_size)
-    
-    for batch_dct in dataset_iter:
-      feed_dict = self.add_dummies_to_dataset(batch_dct,
-                                              batch_size=batch_size)
-      sess.run(['train_op'], feed_dict=feed_dict)
-      
   def train(self, dataset_dict, num_epochs, batch_size=None):
     """
     Train a Model
@@ -211,18 +187,18 @@ class GDTrainer(Trainer):
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
     
-    merged_summaries = self.merge_summaries()
-    tr_batch_size = batch_size or self.batch_size or 1
+    # get cost/summaries
     cost_name = self.model.otensor_names['cost']
+    merged_summaries = self.merge_summaries()
+
+    tr_batch_size = batch_size or self.batch_size or 1
     cvalid = np.inf
     for ep in range(num_epochs):
-      # GD update
-      self.update(sess,
-                  train_dataset,
-                  batch_size=tr_batch_size)
-      ctrain = self.reduce_op_from_batches(sess,
-                                           [cost_name],
-                                           train_dataset)
+      # gd update
+      self.update_gd(train_dataset,
+                     batch_size=tr_batch_size)
+      ctrain = self.run_ops_from_batches(cost_name,
+                                         train_dataset)
       print("ep, cost: {}, {}".format(ep, ctrain))
       
       # Add summaries
@@ -232,19 +208,70 @@ class GDTrainer(Trainer):
       # Save on validation improvement
       if self.save:
         new_cvalid = self.reduce_op_from_batches(sess,
-                                                 [cost_name],
+                                                 cost_name,
                                                  valid_dataset)
         if new_cvalid < cvalid:
-          cvalid = new_cvalid
-          print('Valid. cost:', cvalid, '... Saving...')
+          print('Valid. cost:', new_cvalid, '... Saving...')
           
+          cvalid = new_cvalid
           rslts_path = self.rslts_dir + self.model.main_scope
           global_step = self.model.otensor_names['global_step']
-          self.saver.save(sess,
-#                           rslts_path+self.model.main_scope,
-                          rslts_path,
+          self.saver.save(sess, rslts_path,
                           global_step=global_step)
   
+  def update_gd(self, dataset, batch_size,
+                lr=None):
+    """
+    Perform a single gradient descent update for the variables in this cost.
+    
+    TODO: Document!
+    TODO: Get rid of the feed_dict in favor of tensorflow Queues! Add
+    multithreading capabilities
+    """
+    dataset_iter = batch_iterator_from_dataset(dataset, batch_size,
+                                               scope=self.scope)
+    
+    for feed_dict in dataset_iter:
+      if lr is not None:
+        feed_dict['lr:0'] = lr
+      self.run_ops_from_batches('train_op', feed_dict)
+      
+  def run_ops_from_batches(self, opnames, feed_dict,
+                           reduction=None,
+                           axis=None):
+    """
+    Run an op or a list of ops
+    """
+    sess = self.sess
+    batch_size = get_dataset_batch_size(feed_dict, self.scope)
+    if reduction is None:
+      self.add_dummy_feeds_to_dataset(feed_dict, batch_size=batch_size)
+      vals = sess.run(opnames, feed_dict=feed_dict)
+      self.pop_dummy_feeds_from_dataset(feed_dict)
+    else:
+      raise NotImplementedError("")
+    
+    return vals
+    
+  def add_dummy_feeds_to_dataset(self, dataset, batch_size=None):
+    """
+    Make a feed_dict for sess.run from a dataset.
+    
+    In particular, add inputs for all the dummy variables defined by the Builder
+    associated to this model
+    """
+    if 'dummy_bsz' in self.dummies:
+      dummy_name = self.dummies['dummy_bsz']
+      dataset[dummy_name] = np.array([batch_size], dtype=np.int32)      
+        
+  def pop_dummy_feeds_from_dataset(self, feed_dict):
+    """
+    Pop the dummy keys from a feeddict
+    """
+    fd_keys = list(feed_dict.keys())
+    for key in fd_keys:
+      if key.startswith('dummy'): feed_dict.pop(key)
+    
   def run_summaries(self, sess, dataset, merged_summaries, epoch):
     """
     Run all the defined summaries and write to a log
@@ -252,46 +279,10 @@ class GDTrainer(Trainer):
     obskey = next(key for key in dataset)
     batch_size = dataset[obskey].shape[0]
 
-    fd_dct = self.add_dummies_to_dataset(dataset, batch_size=batch_size)
+    fd_dct = self.add_dummy_feeds_to_dataset(dataset, batch_size=batch_size)
     summaries = sess.run(merged_summaries, feed_dict=fd_dct)
     self.writer.add_summary(summaries, epoch)
     
-  def reduce_op_from_batches(self,
-                             sess,
-                             ops,
-                             dataset,
-                             reduction='mean',
-                             batch_size=None):
-    """
-    Reduce ops from batches
-    
-    TODO: Document!
-    """
-    if batch_size is None:
-      obskey = next(key for key in dataset if not key.startswith('dummy'))
-      batch_size = dataset[obskey].shape[0]
-      
-      fd_dct = self.add_dummies_to_dataset(dataset, batch_size=batch_size)
-      return sess.run(ops, feed_dict=fd_dct)
-    else:
-      reduced = 0
-      for key in self.dummies: dataset.pop(key, None)
-      dataset_iter = batch_iterator_from_dataset(dataset,
-                                                 self.batch_size,
-                                                 shuffle=False)
-      if reduction == 'mean' or reduction == 'sum':
-        c = 0
-        for batch_dct in dataset_iter:
-          c += 1
-          fd_dct = self.add_dummies_to_dataset(batch_dct,
-                                               batch_size=self.batch_size)
-          reduced += sess.run(ops, feed_dict=batch_dct)[0]
-        if c == 0:
-          raise ValueError("No batches in dataset. Possibly one or more data arrays "
-                           "are empty")
-        if reduction == 'mean': return reduced/(self.batch_size*c)
-        else: return reduced      
-        
   def merge_summaries(self):
     """
     Merge summaries
@@ -312,14 +303,77 @@ class GDTrainer(Trainer):
     return tf.summary.merge(merged_summaries)
 
 
+class fLDSTrainer(GDTrainer):
+  """
+  """
+  def train(self, dataset_dict, num_epochs,
+            batch_size=None):
+    """
+    Train a fLDS-class Model
+    """
+    model = self.model
+    sess = self.sess
+    
+    # get subdatasets
+    train_dataset = dataset_dict['train']
+    valid_dataset = dataset_dict['valid']
+
+    # get cost/summaries
+    cost_name = self.model.otensor_names['cost']
+    merged_summaries = self.merge_summaries()
+
+    tr_batch_size = batch_size or self.batch_size or 1
+    cvalid = np.inf
+    if self.save:
+      print("Saving in", self.rslts_dir)
+    for ep in range(num_epochs):
+      # compute the posterior
+      state_seqs_tr = model.eval_feed(train_dataset, 'Posterior:loc')
+      state_seqs_vd = model.eval_feed(valid_dataset, 'Posterior:loc')
+      train_dataset[model.otensor_names['StateSeq:main']] = state_seqs_tr
+      valid_dataset[model.otensor_names['StateSeq:main']] = state_seqs_vd
+      Ntrain, Nvalid = state_seqs_tr.shape[0], state_seqs_vd.shape[0]
+      
+      # gd step
+      t0 = time.time()
+      self.update_gd(train_dataset,
+                     batch_size=tr_batch_size)
+      t1 = time.time()
+      print("time:", t1-t0)
+      
+      ctrain = self.run_ops_from_batches(cost_name,
+                                         train_dataset)
+      print("ep, cost: {}, {}".format(ep, ctrain/Ntrain))
+
+      # add summaries
+      if self.keep_logs:
+        self.run_summaries(sess, train_dataset, merged_summaries, ep)
+      
+      # save on validation improvement
+      if self.save:
+        new_cvalid = self.run_ops_from_batches(cost_name, valid_dataset)
+        if new_cvalid < cvalid:
+          print('Valid. cost:', new_cvalid/Nvalid, '... Saving...')
+          
+          cvalid = new_cvalid
+          rslts_path = self.rslts_dir + self.model.main_scope
+          global_step = self.model.otensor_names['global_step']
+          self.saver.save(sess, rslts_path,
+                          global_step=global_step)
+          print('')
+
+
 class VINDTrainer(GDTrainer):
   """
+  A Trainer for the VIND class of models
   """
   def _update_default_directives(self, **dirs):
     """
     Update the default directives.
     """
-    this_trainer_dirs = {'numfpis' : 2}
+    this_trainer_dirs = {'numfpis' : 5,
+                         'wlr_schedule' : False,
+                         'endlr' : 1e-4}
     if self.mode == 'new':
       cost_name = self.model.otensor_names['cost']
       cost = tf.get_default_graph().get_tensor_by_name(cost_name)
@@ -327,58 +381,81 @@ class VINDTrainer(GDTrainer):
     this_trainer_dirs.update(dirs)
     super(VINDTrainer, self)._update_directives(**this_trainer_dirs)
 
-  def train(self, dataset_dict, num_epochs, batch_size=None):
+  def train(self, dataset_dict, num_epochs,
+            batch_size=None,
+            lr=None):
     """
+    Train a VIND-class Model
     """
+    model = self.model
     sess = self.sess
     
     # get subdatasets
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
 
-    merged_summaries = self.merge_summaries()
-    tr_batch_size = batch_size or self.batch_size or 1
+    # get cost/summaries
     cost_name = self.model.otensor_names['cost']
+    genlp_name = self.model.otensor_names['Generative:logprob']
+    lldslp_name = self.model.otensor_names['LLDS:logprob']
+    postent_name = self.model.otensor_names['Posterior:entropy']
+    merged_summaries = self.merge_summaries()
+
+    tr_batch_size = batch_size or self.batch_size or 1
     cvalid = np.inf
-    started_training = False
+    if self.save:
+      print("Saving in", self.rslts_dir)
     for ep in range(num_epochs):
       # fpi step
-      if not started_training:
-        state_seqs_tr = self.model.eval('InnSeq:main', train_dataset)
-        state_seqs_vd = self.model.eval('InnSeq:main', valid_dataset)
-        train_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_tr
-        valid_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_vd
-        started_training = True
+      if model.otensor_names['StateSeq:main'] not in train_dataset:
+        print('First epoch')
+        state_seqs_tr = model.eval_feed(train_dataset, 'Recognition:loc')
+        state_seqs_vd = model.eval_feed(valid_dataset, 'Recognition:loc')
+        train_dataset[model.otensor_names['StateSeq:main']] = state_seqs_tr
+        valid_dataset[model.otensor_names['StateSeq:main']] = state_seqs_vd
+        Ntrain, Nvalid = state_seqs_tr.shape[0], state_seqs_vd.shape[0]
       else:
         for _ in range(self.directives['numfpis']):
-          state_seqs_tr = self.model.eval('Recognition:main', train_dataset)
-          state_seqs_vd = self.model.eval('Recognition:main', valid_dataset)
-          train_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_tr
-          valid_dataset[self.model.otensor_names['StateSeq:main']] = state_seqs_vd
+          state_seqs_tr = model.eval_feed(train_dataset, 'Posterior:loc')
+          state_seqs_vd = model.eval_feed(valid_dataset, 'Posterior:loc')
+          train_dataset[model.otensor_names['StateSeq:main']] = state_seqs_tr
+          valid_dataset[model.otensor_names['StateSeq:main']] = state_seqs_vd
+        Ntrain, Nvalid = state_seqs_tr.shape[0], state_seqs_vd.shape[0]
       
-      # gd step
-      self.update(sess, train_dataset,
-                  batch_size=tr_batch_size)
-      ctrain = self.reduce_op_from_batches(sess, [cost_name],
-                                           train_dataset)
-      print("ep, cost: {}, {}".format(ep, ctrain))
+      # get lr
+      if self.directives['wlr_schedule']:
+        init_lr, end_lr = self.directives['lr'], self.directives['endlr'] 
+        newlr = init_lr - (init_lr - end_lr)*ep/num_epochs
+        print('lr:', lr)
+        lr = lr or newlr  
 
-      # Add summaries
+      # gd step
+      t0 = time.time()
+      self.update_gd(train_dataset,
+                     batch_size=tr_batch_size,
+                     lr=lr)
+      t1 = time.time()
+      print("time:", t1-t0)
+      
+      ctrain = self.run_ops_from_batches(cost_name,
+                                         train_dataset)
+      print("ep, cost: {}, {}".format(ep, ctrain/Ntrain))
+      others = self.run_ops_from_batches([genlp_name, lldslp_name, postent_name],
+                                         train_dataset)
+
+      # add summaries
       if self.keep_logs:
         self.run_summaries(sess, train_dataset, merged_summaries, ep)
       
-      # Save on validation improvement
+      # save on validation improvement
       if self.save:
-        new_cvalid = self.reduce_op_from_batches(sess,
-                                                 [cost_name],
-                                                 valid_dataset)
+        new_cvalid = self.run_ops_from_batches(cost_name, valid_dataset)
         if new_cvalid < cvalid:
-          cvalid = new_cvalid
-          print('Valid. cost:', cvalid, '... Saving...')
+          print('Valid. cost:', new_cvalid/Nvalid, '... Saving...')
           
+          cvalid = new_cvalid
           rslts_path = self.rslts_dir + self.model.main_scope
           global_step = self.model.otensor_names['global_step']
-          self.saver.save(sess,
-#                           rslts_path+self.model.main_scope,
-                          rslts_path,
+          self.saver.save(sess, rslts_path,
                           global_step=global_step)
+          print('')

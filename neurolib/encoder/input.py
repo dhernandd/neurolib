@@ -268,7 +268,8 @@ class NormalInputNode(InputNode):
     Update the node directives
     """
     this_node_dirs = {'outputname_1' : 'loc',
-                      'outputname_2' : 'scale'}
+                      'outputname_2' : 'scale',
+                      'initscale' : 2.0}
     this_node_dirs.update(dirs)
     super(NormalInputNode, self)._update_directives(**this_node_dirs)
   
@@ -354,11 +355,12 @@ class NormalInputNode(InputNode):
     """    
     dirs = self.directives
     dtype = self.type_dict[dirs.dtype]
+    initscale = dirs.initscale
     with tf.variable_scope(self.name + '_scale', reuse=tf.AUTO_REUSE):
       if len(self.state_sizes[0]) > 1:
         raise NotImplementedError
       else:
-        si = tf.eye(self.xdim, dtype=dtype)
+        si = initscale*tf.eye(self.xdim, dtype=dtype)
         scale = tf.get_variable('scale',
                                 dtype=dtype,
                                 initializer=si)
@@ -387,4 +389,63 @@ class NormalInputNode(InputNode):
     self.fill_oslot_with_tensor(2, scale)
 
     self._is_built = True
+  
+
+class CategoricalInput(InputNode):
+  """
+  """
+  num_expected_outputs = 2
+  
+  def __init__(self,
+               builder,
+               num_states,
+               is_sequence=False,
+               name=None,
+               name_prefix='NormalIn',
+               **dirs):
+    """
+    Initialize the NormalInputNode
+        
+    Args:
+      builder (Builder): An instance of Builder necessary to declare the
+          secondary output nodes. 
+
+      num_states (int or list of ints): The shape of the main output
+          code. This excludes the 0th dimension - batch size - and the 1st
+          dimension when the data is a sequence - number of steps.
+          
+      is_sequence (bool): Is the input a sequence?
+
+      name (str): A unique name for this node.
+
+      dirs (dict): A set of user specified directives for constructing this
+          node.
+    """
+    name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
+    
+    super(CategoricalInput, self).__init__(builder,
+                                           num_states,
+                                           is_sequence=is_sequence,
+                                           dtype='float64',
+                                           name_prefix=name_prefix,
+                                           **dirs)
+
+    # Initialize list of free i/o slots
+    self.free_oslots = list(range(self.num_expected_outputs))
+
+    # Get the dummy batch size
+    if self.batch_size is None:
+      self.dummy_bsz = self.builder.dummy_bsz
+    
+    self.dist = None
+    
+  def _update_directives(self, **dirs):
+    """
+    Update the node directives
+    """
+    this_node_dirs = {'outputname_1' : 'loc',
+                      'outputname_2' : 'scale',
+                      'initscale' : 2.0}
+    this_node_dirs.update(dirs)
+    super(NormalInputNode, self)._update_directives(**this_node_dirs)
   

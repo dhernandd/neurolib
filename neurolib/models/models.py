@@ -19,15 +19,18 @@ import os
 from abc import abstractmethod
 
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
 
-from neurolib.utils.graphs import get_session
-from neurolib.trainer.costs import (mse, mabsdiff, elbo, 
-                                    cross_entropy_with_logits,
-                                    entropy, logprob)
+# from neurolib.utils.graphs import get_session
+from neurolib.utils.dataset_manip import (get_dataset_batch_size,
+                                          prepare_restore_user_dataset_for_eval,
+                                          merge_datasets)
+from neurolib.trainer.costs import *  #pylint: disable=wildcard-import
 from _collections import defaultdict
+from neurolib.trainer.costs import elbo_vind
 
 # pylint: disable=bad-indentation, no-member, protected-access
+
 
 class Model(abc.ABC):
   """
@@ -63,6 +66,8 @@ class Model(abc.ABC):
   summaries_dict = {'mse' : mse,
                     'mabsdiff' : mabsdiff,
                     'elbo' : elbo,
+                    'elbo_flds' : elbo_flds,
+                    'elbo_vind' : elbo_vind,
                     'cross_entropy_wlogits' : cross_entropy_with_logits,
                     'entropy' : entropy,
                     'logprob' : logprob}
@@ -74,6 +79,7 @@ class Model(abc.ABC):
     
     Starts a tf.Session for this Model
     """
+    tf.reset_default_graph()
     self.sess = tf.Session()
     
     self.directives = {}
@@ -125,6 +131,17 @@ class Model(abc.ABC):
       dataset[dummy_name] = np.array([batch_size], dtype=np.int32)
       
     return dataset
+  
+  def make_input_nodes_feed(self, dataset):
+    """
+    Make the feed dict for the Model InputNode placeholders.
+    
+    This method changes the provided dict in place
+    """
+    scope = self.main_scope
+    for key in dataset:
+      dataset[scope + '/' + key + '_main:0'] = dataset.pop(key)
+    return dataset
     
   def prepare_dataset(self, dataset, batch_size=None):
     """
@@ -150,50 +167,7 @@ class Model(abc.ABC):
       bsz = dataset[key].shape[0]  #pylint: disable=undefined-loop-variable
     dset = self.add_dummies_to_dataset(dataset, bsz)
     return dset
-      
-  def prepare_datasets(self, dataset):
-    """
-    Take a dataset whose keys have the form
-    
-        prefix_InputNode
         
-    where prefix is one of 'train', 'valid' or 'test' and splits it into
-    training, validation and test datasets.
-    
-    Args:
-      dataset (dict) : A dataset whose keys are strings with the form 'prefix_InputNode'
-          
-    Returns:
-      A dict with keys 'train', 'valid', 'test' whose values are dicts
-      themselves, the values of the latter being the data, keyed by the names of
-      the InputNodes that will be fed with it.
-    """
-    scope = self.main_scope
-    train_dataset = {}
-    valid_dataset = {}
-    test_dataset = {}
-    common_keys = []
-    for key in dataset:
-      d_set, inode = key.split('_')[0], "_".join(key.split('_')[1:])
-      if d_set == 'train':
-        train_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
-      elif d_set == 'valid':
-        valid_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
-      elif d_set == 'test':
-        test_dataset[scope + '/' + inode + '_main:0'] = dataset[key]
-      else:
-        for dset in [train_dataset, valid_dataset, test_dataset]:
-          dset[key] = dataset[key]
-          common_keys.append(key)
-    
-    if train_dataset: train_dataset = self.add_dummies_to_dataset(train_dataset)
-    if valid_dataset: valid_dataset = self.add_dummies_to_dataset(valid_dataset)
-    if test_dataset: test_dataset = self.add_dummies_to_dataset(test_dataset)
-
-    return {'train' : train_dataset,
-            'valid' : valid_dataset, 
-            'test' : test_dataset}
-    
   def batch_iterator_from_dataset(self, dataset, shuffle=True):
     """
     Define a batch iterator from a dataset
@@ -219,80 +193,129 @@ class Model(abc.ABC):
     """
     raise NotImplementedError("")
         
-  @abstractmethod
-  def train(self, dataset, num_epochs):
+  def train(self, user_provided_dataset, *additional_usr_datasets,
+            num_epochs=100,
+            feed_schedule=None,
+            **kwargs):
     """
-    Train the Model. Must be implemented
+    Train a VIND Model
     """
-    raise NotImplementedError("")
-
-  def reduce_op_from_batches(self,
-                             op,
-                             dataset,
-                             reduction='mean',
-                             num_batches=100):
-    """
-    Reduce op from batches
+    self.check_dataset_correctness(user_provided_dataset)
     
-    Args:
-        sess (tf.Session) :
+    if not additional_usr_datasets:
+      self.do_train(user_provided_dataset,
+                    num_epochs=num_epochs,
+                    **kwargs)
+    else:
+      if feed_schedule is None:
+        raise ValueError("Arg `feed_schedule` is mandatory if more than one "
+                         "user_provided_dataset is provided")
+      for i, num_epochs in enumerate(feed_schedule):
+        self.do_train(user_provided_dataset, num_epochs)
+        toadd_dataset = additional_usr_datasets[i]
+        user_provided_dataset = merge_datasets(user_provided_dataset,
+                                               toadd_dataset)
+        
+  def check_dataset_correctness(self, user_dataset):
+    """
+    Checks a that a user-provided dataset is compatible with the Model
+    """
+    raise NotImplementedError("Please implement me")
+
+  @prepare_restore_user_dataset_for_eval
+  def do_train(self, dataset,
+               num_epochs=100,
+               **kwargs):
+    """
+    Train the RNNClassifier model from a user-provided dataset.
+    
+    Functions using a user_provided dataset should 
+    
+    The user_provided_dataset, provided by the client, should have keys:
+    """
+    self.trainer.train(dataset,
+                       num_epochs,
+                       batch_size=self.batch_size,
+                       **kwargs)
+
+  @prepare_restore_user_dataset_for_eval
+  def eval(self, dataset, names,
+           key,
+           reduction=None,
+           axis=None):
+    """
+    Eval an output name given a user provided dataset
+    """
+    if key is None:
+      return self.eval_feed(dataset, names,
+                            reduction=reduction,
+                            axis=axis)
+    else:
+      return self.eval_feed(dataset[key], names,
+                            reduction=reduction,
+                            axis=axis)
+    
+  def eval_feed(self, feed_dict, names,
+                reduction=None,
+                axis=None):
+    """
+    Evaluate an output name given an input feed_dict.
+    
+    This method adds to the feeddict keys for the dummy placeholders of the
+    models in-place. Make sure to pop them before exiting!
+    
+    TODO: Implement this in terms of Builder.eval()
+    """
+    if isinstance(names, list):
+      opnames = [self.otensor_names[name] for name in names]
+    else:
+      opnames = self.otensor_names[names]
+    
+    vals = self.run_ops_from_batches(opnames, feed_dict, reduction, axis)
+    return vals
+  
+  @prepare_restore_user_dataset_for_eval
+  def eval_ops(self, feed_dict, ops):
+    """
+    """
+    return self.sess.run(ops, feed_dict=feed_dict)
+  
+  def run_ops_from_batches(self, opnames, feed_dict,
+                           reduction=None,
+                           axis=None):
+    """
+    Run an op
     """
     sess = self.sess
-    if self.batch_size is None:
-      return sess.run(op, feed_dict=dataset)
+    batch_size = get_dataset_batch_size(feed_dict, self.main_scope)
+    if reduction is None:
+      self.add_dummy_feeds_to_dataset(feed_dict, batch_size=batch_size)
+      vals = sess.run(opnames, feed_dict=feed_dict)
+      self.pop_dummy_feeds_from_dataset(feed_dict)
     else:
-      reduced = 0
-      dataset_iter = self.batch_iterator_from_dataset(dataset)
-      if reduction == 'mean' or reduction == 'sum':
-        for batch_data in dataset_iter:
-          reduced += sess.run(op, feed_dict=batch_data)[0]
-        if reduction == 'mean': return reduced/(self.batch_size*num_batches)
-        else: return reduced
-          
-  def sample(self, input_data, node, islot=0):
-    """
-    Deprecated (use model.eval() instead)
+      raise NotImplementedError("")
     
-    Sample from the model graph. For user provided features generates a
-    response.
-    """
-    addcolon0 = lambda s : self.main_scope +  '/' + s + ':0'
-    node = self.nodes[node]
-    sess = get_session()
-    input_data = {addcolon0(key) : value for key, value in input_data.items()}
-    if self.batch_size is None:
-      return sess.run(node._islot_to_itensor[islot], feed_dict=input_data)
-    else:
-      num_samples =len(list(input_data.values())[0]) 
-      if num_samples % self.batch_size:
-        raise ValueError("The number of samples ({})is not divisible by "
-                         "self.batch_size({})".format(num_samples,
-                                                      self.batch_size))
-      res = np.zeros([num_samples] + node._islot_to_shape[islot][1:])
-      i = 0
-      for batch_data in self.batch_iterator_from_dataset(input_data,
-                                                         shuffle=False):
-        r = sess.run(node._islot_to_itensor[islot],
-                     feed_dict=batch_data)
-        res[i:i+self.batch_size] = r
-        i += 1
-      return res
-  
-  def extract_dirs(self, prefix):
-    """
-    Make a new dictionary with directives matching a prefix
-    """
-    return {'_'.join(key.split('_')[1:]) : value for key, value 
-            in self.directives.items() if key.startswith(prefix)}
-    
-  @staticmethod
-  def get_latest_metafile_in_rslt_dir(rslt_dir):
-    """
-    Return the latest metafile in the provided directory
-    """
-    prefixes = [file[:-5] for file in os.listdir(rslt_dir) if 'meta'==file.split('.')[-1]]
-    return max([f for f in prefixes], key=lambda f : int(f.split('-')[-1])) + '.meta'
+    return vals
 
+  def add_dummy_feeds_to_dataset(self, dataset, batch_size=None):
+    """
+    Make a feed_dict for sess.run from a dataset.
+    
+    In particular, add inputs for all the dummy variables defined by the Builder
+    associated to this model
+    """
+    if 'dummy_bsz' in self.dummies:
+      dummy_name = self.dummies['dummy_bsz']
+      dataset[dummy_name] = np.array([batch_size], dtype=np.int32)      
+        
+  def pop_dummy_feeds_from_dataset(self, feed_dict):
+    """
+    Pop the dummy keys from a feeddict
+    """
+    fd_keys = list(feed_dict.keys())
+    for key in fd_keys:
+      if key.startswith('dummy'): feed_dict.pop(key)
+    
   def restore(self, metafile=None):
     """
     Restore a saved model 
@@ -309,6 +332,21 @@ class Model(abc.ABC):
       saver = tf.train.import_meta_graph(rslt_dir+metafile)
     saver.restore(self.sess, tf.train.latest_checkpoint(rslt_dir))
 
+  def extract_dirs(self, prefix):
+    """
+    Make a new dictionary with directives matching a prefix
+    """
+    return {'_'.join(key.split('_')[1:]) : value for key, value 
+            in self.directives.items() if key.startswith(prefix)}
+    
+  @staticmethod
+  def get_latest_metafile_in_rslt_dir(rslt_dir):
+    """
+    Return the latest metafile in the provided directory
+    """
+    prefixes = [file[:-5] for file in os.listdir(rslt_dir) if 'meta'==file.split('.')[-1]]
+    return max([f for f in prefixes], key=lambda f : int(f.split('-')[-1])) + '.meta'
+
   def save_otensor_names(self):
     """
     Pickle user friendly hashes with extra information about the neurolib model
@@ -316,33 +354,8 @@ class Model(abc.ABC):
     """
     rslts_dir = self.trainer.rslts_dir
     with open(rslts_dir + 'output_names', 'wb') as f1:
-      print("self.builder.otensor_names", self.builder.otensor_names)
       pickle.dump(self.otensor_names, f1)
     with open(rslts_dir + 'dummies', 'wb') as f2:
-      print("self.builder.dummies", self.builder.dummies)
       pickle.dump(self.builder.dummies, f2)
     
     return self.otensor_names
-
-  def eval(self, names, dataset, key=None):
-    """
-    Evaluate a tensor given an input dataset.
-    
-    TODO: Implement this in terms of Builder.eval()
-    """
-    sess = self.sess
-#     if isinstance(names, str): names = [names]
-#     opnames = [self.otensor_names[name] for name in names]
-    if isinstance(names, list):
-      opnames = [self.otensor_names[name] for name in names]
-    else:
-      opnames = self.otensor_names[names]
-    
-    if key is None:
-      fd = self.prepare_dataset(dataset)
-    else:
-      dataset_dict = self.prepare_datasets(dataset)
-      fd = dataset_dict[key]
-    
-    return sess.run(opnames, feed_dict=fd)
-  

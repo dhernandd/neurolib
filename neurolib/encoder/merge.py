@@ -149,7 +149,6 @@ class MergeNode(InnerNode):
       self.node_list = self.make_inode_list_from_dtuples()
     else:
       self.node_list = self._complete_node_list(node_list)
-      print("self.node_list", self.node_list)
       self.node_list_tuples = self._make_list_islot_otuples_from_nodelist()
     self.state_sizes = self._get_state_sizes()
     
@@ -349,15 +348,19 @@ class MergeNormals(MergeNode):
     self._is_built = True 
 
   
-class MergeSeqsNormalwNormalEv(MergeNode):
+class MergeSeqsNormalwNormalEv(InnerNode):
   """
-  Merge a normal sequence with an LDS evolution sequence
+  Merge a normal sequence with an LDS/LLDS evolution sequence
   """
   num_expected_outputs = 4
+  
   def __init__(self,
                builder,
-               node_list=None,
-               node_dict_tuples=None,
+               seq_inputs,
+               ds_inputs,
+               prior_inputs,
+#                node_list=None,
+#                node_dict_tuples=None,
                name=None,
                name_prefix=None,
                **dirs):
@@ -368,66 +371,74 @@ class MergeSeqsNormalwNormalEv(MergeNode):
     name_prefix = name_prefix or 'MergeNormalSeqLDS'
     name_prefix = self._set_name_or_get_name_prefix(name, name_prefix=name_prefix)
     
+    # for merge nodes call to super before defining state sizes
     super(MergeSeqsNormalwNormalEv, self).__init__(builder,
-                                               node_list=node_list,
-                                               node_dict_tuples=node_dict_tuples,
-                                               is_sequence=True,
-                                               name_prefix=name_prefix,
-                                               **dirs)
+                                                   is_sequence=True,
+                                                   name_prefix=name_prefix,
+                                                   **dirs)
+    
+    # directives object
+    self.directives = NodeDirectives(self.directives)
+    self.oslot_names = self.directives.output_names
+
+    # inputs
+    self.seq_inputs = seq_inputs
+    self.ds_inputs = ds_inputs
+    print("ds_inputs", ds_inputs)
+    assert len(self.ds_inputs) == 1, "Only one merger must represent a dynamical system"
+    self.prior_inputs = prior_inputs
+    self.node_list = self.seq_inputs + self.ds_inputs + self.prior_inputs
+    self.num_expected_inputs = len(seq_inputs) + len(prior_inputs) + len(ds_inputs)    
+
+    # Get state_sizes
+    self.state_sizes = self._get_state_sizes()
+    
+      # Declare num_expected_inputs, outputs, etc.
+    self.num_expected_inputs = len(self.node_list) 
+    
+    # shapes
+    self.oshapes = self._get_all_oshapes()
+    self.state_ranks = self.get_state_size_ranks()
+    
+    # Free i/o slots
+    self._islot_to_itensor = [{} for _ in range(self.num_expected_inputs)]
+    self.free_islots = list(range(self.num_expected_inputs))
+    self.free_oslots = list(range(self.num_expected_outputs))
+    
     # shapes
     self.xdim = self.oshapes['main'][-1]
 
     # dist
     self.dist = None
     
-    # add links from mergers
-    self._add_links_from_mergers()
-
-  def _complete_node_list(self, node_list):
-    """
-    Add implicit nodes to the `node_list` before assigning to the attribute of
-    self.
-    
-    TODO: This wont work with an RNN defined DS. Fix!
-    """
-#     lds_name = node_list[1]
-#     lds = self.builder.nodes[lds_name]
-#     node_list.append(lds.get_init_inodes()[0])
-    return node_list
-
   def _make_list_islot_otuples_from_nodelist(self):
     """
     Make the merge list.
+    
+    TODO: What if the nodes are normal but variance is not specified through
+    prec? Need to account for this
     """
     if self.node_list is None:
       raise ValueError("`node_list` attribute undefined")
     
-    # [prior, input sequence, LDS]
+    # [input sequence, LDS, prior]
     return [[('loc', 'prec')], [('prec', 'A')], [('scale',)]]
     
   def _get_state_sizes(self):
     """
-    Define state_sizes from node list
+    Define state_sizes from inputs
     """
-    inseq_name = self.node_list[0]
-    inseq = self.builder.nodes[inseq_name]
-    
-    islot = 0
-    parent_oslot_pair = 0
-    oslot = 0
-    itensor_oslot = self.node_list_tuples[islot][parent_oslot_pair][oslot]
-    ishape = inseq.oshapes[itensor_oslot]
-    
-    return [[ishape[-1]]]
-    
+    ds = self.builder.nodes[self.ds_inputs[0]]
+    return [[ds.xdim]]
+  
   def _update_directives(self, **dirs):
     """
     Update the node directives
     """
     this_node_dirs = {'usett' : False,
                       'outputname_1' : 'loc',
-                      'outputname_2' : 'scaled',
-                      'outputname_3' : 'scaleoffd'}
+                      'outputname_2' : 'invscaled',
+                      'outputname_3' : 'invscaleoffd'}
     this_node_dirs.update(dirs)
     super(MergeSeqsNormalwNormalEv, self)._update_directives(**this_node_dirs)
   
@@ -441,70 +452,100 @@ class MergeSeqsNormalwNormalEv(MergeNode):
     
     return {'main' : iseq_mainshape,
             'loc' : iseq_mainshape,
-            'scaled' : iseq_mainshape + [iseq_mainshape[-1]],
-            'scaleoffd' : iseq_mainshape + [iseq_mainshape[-1]]}
+            'invscaled' : iseq_mainshape + [iseq_mainshape[-1]],
+            'invscaleoffd' : iseq_mainshape + [iseq_mainshape[-1]]}
 
-  def _add_links_from_mergers(self):
-    """
-    Create the edges from the parents to this MergeNode
-    """
-    print("self.node_list", self.node_list)
-    for i, node_name in enumerate(self.node_list):
-      self.builder.addDirectedLink(node_name, self, islot=i)
-    print("self.builder.adj_matrix", self.builder.adj_matrix)
-    
   def __call__(self, *inputs):
     """
     Evaluate the node on a list of inputs.
     """
     raise NotImplementedError
   
-  def build_outputs(self, islot_to_itensor=None):
+  def _build(self):
     """
-    Get MergeNormals outputs
+    Build the MergeNormalSeqLDS
     """
-    if islot_to_itensor is not None:
-      _input = islot_to_itensor
-    else:
-      _input = self._islot_to_itensor
-    print("_input", _input)
+#     samp, loc, invscaled, invscaleoffd = self.build_outputs()
+    self.build_outputs()
+    
+#     self.fill_oslot_with_tensor(0, samp)
+#     self.fill_oslot_with_tensor(1, loc)
+#     self.fill_oslot_with_tensor(2, invscaled)
+#     self.fill_oslot_with_tensor(3, invscaleoffd)
 
+    self._is_built = True 
+  
+  def build_outputs(self, **inputs):
+    """
+    Get the outputs of the LDSNode
+    """
+    print("Building all outputs, ", self.name)
+#     invscale, _ = self.build_output('invscale', **inputs)
+#     loc, _ = self.build_output('loc', invscale=invscale, **inputs)
+#     samp, _ = self.build_output('main', invscale=invscale, loc=loc)
+    self.build_output('invscale', **inputs)
+    self.build_output('loc', **inputs)
+    self.build_output('main', **inputs)
+  
+  def build_output(self, oname, **inputs):
+    """
+    Build a single output
+    """
+    if oname == 'invscale':
+      return self.build_invscale(**inputs)
+    elif oname == 'loc':
+      return self.build_loc(**inputs)
+    elif oname == 'main':
+      return self.build_main(**inputs)
+    else:
+      raise ValueError("`oname` {} is not an output name for "
+                       "this node".format(oname))
+    
+  def prepare_inputs(self, **inputs):
+    """
+    Prepare inputs for building
+    """
+    true_inputs = {'imain_loc'  : self.get_input_tensor(0, 'loc'),
+                   'imain_prec' : self.get_input_tensor(0, 'prec'),
+                   'ids_prec' : self.get_input_tensor(1, 'prec'),
+                   'ids_A' : self.get_input_tensor(1, 'A'),
+                   'iprior_scale' : self.get_input_tensor(2, 'scale')}
+    
+    if inputs:
+      print("\t\tUpdating defaults,", self.name, "with", list(inputs.keys()))
+      true_inputs.update(inputs)
+    return true_inputs
+
+  def build_invscale(self, **inputs):
+    """
+    """
+    return self.build_invscale_secs(**inputs)[0]
+  
+  def build_invscale_secs(self, **inputs):
+    """
+    Build the invscale
+    """
+    print("\tBuilding invscale,", self.name)
+    
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       NTbins = self.max_steps
       xDim = self.xdim
+      
+      inputs = self.prepare_inputs(**inputs)
+      mu_NxTxd = inputs['imain_loc']
+      lmbda_NxTxdxd = inputs['imain_prec']
+      invQ = inputs['ids_prec']
+      A = inputs['ids_A']
+      Q0scale_dxd = inputs['iprior_scale']
 
-      # Get inputs from the inner sequence
-      islot = 0
-      inseq_loc_oslot = self.node_list_tuples[islot][0][0]
-      inseq_scale_oslot = self.node_list_tuples[islot][0][1]
-      
-      mu_NxTxd = _input[islot][inseq_loc_oslot]
-      mu_NxTxdx1 = tf.expand_dims(mu_NxTxd, axis=-1)
-      lmbda_NxTxdxd = _input[islot][inseq_scale_oslot]
-      lmbdaMu_NxTxd = tf.squeeze(tf.matmul(lmbda_NxTxdxd, mu_NxTxdx1), axis=-1)
-      
-      print("mu_NxTxd", mu_NxTxd)
       main_sh = infer_shape(mu_NxTxd)
       Nsamps = tf.shape(mu_NxTxd)[0]
   
-      # Get inputs from the evolution sequence
-      islot = 1
-      evseq_invQ_oslot = self.node_list_tuples[islot][0][0]
-      evseq_A_oslot = self.node_list_tuples[islot][0][1]
-      
-      # works for LDS and VIND specific
-      invQ = _input[islot][evseq_invQ_oslot]
-      A = _input[islot][evseq_A_oslot]
+      # Get node_inputs from the evolution sequence
       invQ_NxTxdxd = match_tensor_shape(main_sh, invQ, 4)
       A_NxTxdxd = match_tensor_shape(main_sh, A, 4)
       
-      # Get input from the evolution sequence prior
-      islot = 2
-      prior_invQ_oslot = self.node_list_tuples[islot][0][0]
-      
-      Q0scale_dxd = _input[islot][prior_invQ_oslot]
       Q0scale_Nxdxd = match_tensor_shape(main_sh, Q0scale_dxd, 3)
-      print("Q0scale_Nxdxd", Q0scale_Nxdxd)
       Q0_Nxdxd = tf.matmul(Q0scale_Nxdxd, Q0scale_Nxdxd, transpose_b=True)
       invQ0_Nxdxd = tf.matrix_inverse(Q0_Nxdxd)
       invQ0_Nx1xdxd = tf.expand_dims(invQ0_Nxdxd, axis=1)
@@ -525,7 +566,6 @@ class MergeSeqsNormalwNormalEv(MergeNode):
       #     K(z)_ii = A(z)^T*Qq^{-1}*A(z) + Qt^{-1},     for i in {1,...,T-1 }
       AinvQA_NTm1xdxd = (invQ0Q_NTm1xdxd - 
                          tf.matmul(AinvQ_NTm1xdxd, A_NTm1xdxd, transpose_b=not usett))
-                         
       AinvQA_NxTm1xdxd = tf.reshape(AinvQA_NTm1xdxd,
                                      [Nsamps, NTbins-1, xDim, xDim]) 
 
@@ -544,63 +584,105 @@ class MergeSeqsNormalwNormalEv(MergeNode):
                                     elems=[AA_NxTxdxd, BB_NxTm1xdxd],
                                     initializer=[tf.zeros_like(AA_NxTxdxd[0]), 
                                                 tf.zeros_like(BB_NxTm1xdxd[0])])
-      
-      
-      checks = [A_NxTxdxd, AA_NxTxdxd, BB_NxTm1xdxd]
-      
+    
+    if not self._is_built:
+      self.fill_oslot_with_tensor(2, invscale_2xxNxTxdxd[0])
+      self.fill_oslot_with_tensor(3, invscale_2xxNxTxdxd[1])
+    
+    return invscale_2xxNxTxdxd, ()
+   
+  def build_loc(self, **inputs):
+    """
+    """
+    return self.build_loc_secs(**inputs)[0]
+  
+  def build_loc_secs(self, **inputs):
+    """
+    Build loc
+    """
+    print("\tBuilding loc,", self.name)
+    
+    if not inputs:
+      inputs = self.prepare_inputs(**inputs)
+      invscale_2xxNxTxdxd = [self.get_output_tensor('invscaled'),
+                             self.get_output_tensor('invscaleoffd')]
+    else:
+      inputs = self.prepare_inputs(**inputs)
+      invscale_2xxNxTxdxd = self.build_invscale(**inputs)
+    mu_NxTxd = inputs['imain_loc']
+    lmbda_NxTxdxd = inputs['imain_prec']
+    mu_NxTxdx1 = tf.expand_dims(mu_NxTxd, axis=-1)
+    
+    lmbdaMu_NxTxd = tf.squeeze(tf.matmul(lmbda_NxTxdxd, mu_NxTxdx1), axis=-1)
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       def postX_from_chol(tc1, tc2, lm):
           """
-          postX = (Lambda1 + S)^{-1}.(Lambda1_ij.*Mu_j + X^T_k.*S_kj;i.*X_j)
+          loc = (Lambda1 + S)^{-1}.(Lambda1_ij.*Mu_j + X^T_k.*S_kj;i.*X_j)
           """
           return blk_chol_inv(tc1, tc2, blk_chol_inv(tc1, tc2, lm), 
                               lower=False, transpose=True)
       aux_fn2 = lambda _, seqs : postX_from_chol(seqs[0], seqs[1], seqs[2])
-      postX = tf.scan(fn=aux_fn2, 
+      loc = tf.scan(fn=aux_fn2, 
                       elems=[invscale_2xxNxTxdxd[0], invscale_2xxNxTxdxd[1], lmbdaMu_NxTxd],
-                      initializer=tf.zeros_like(lmbdaMu_NxTxd[0], dtype=tf.float64) )      
-
-      samp = self.get_sample(postX, invscale_2xxNxTxdxd) 
+                      initializer=tf.zeros_like(lmbdaMu_NxTxd[0], dtype=tf.float64) )
     
-    return samp, postX, invscale_2xxNxTxdxd, checks                                    
+    if not self._is_built:
+      self.fill_oslot_with_tensor(1, loc)
     
-  def get_sample(self, loc, trid_invscale):
-    """
-    Sample from the posterior
-    """
-    xDim = self.xdim
-    NTbins = self.max_steps
-    Nsamps = tf.shape(loc)[0]
-    
-    inv_scale_d = trid_invscale[0]
-    inv_scale_od = trid_invscale[1]
-    
-    prenoise_NxTxd = tf.random_normal([Nsamps, NTbins, xDim], dtype=tf.float64)
-    
-    aux_fn = lambda _, seqs : blk_chol_inv(seqs[0], seqs[1], seqs[2],
-                                           lower=False, transpose=True)
-    noise = tf.scan(fn=aux_fn, elems=[inv_scale_d, inv_scale_od, prenoise_NxTxd],
-                    initializer=tf.zeros_like(prenoise_NxTxd[0],
-                                              dtype=tf.float64) )
-    sample = tf.add(loc, noise, name='sample')
-                
-    return sample
-
-  def _build(self):
-    """
-    Build the MergeNormalSeqLDS
-    """
-    samp, loc, invscale, _ = self.build_outputs()
-    
-    self.fill_oslot_with_tensor(0, samp)
-    self.fill_oslot_with_tensor(1, loc)
-    self.fill_oslot_with_tensor(2, invscale[0])
-    self.fill_oslot_with_tensor(3, invscale[1])
-
-    self._is_built = True 
+    return loc, (invscale_2xxNxTxdxd,)
   
-  def entropy(self):
+  def build_main(self, **inputs):
     """
-    Compute the Entropy. 
+    Build main output
+    """
+    return self.build_main_secs(**inputs)[0]
+  
+  def build_main_secs(self, **inputs):
+    """
+    """
+    print("\tBuilding main,", self.name)
+    
+    if not inputs:
+      inputs = self.prepare_inputs(**inputs)
+      invscaled = self.get_output_tensor('invscaled')
+      invscaleoffd = self.get_output_tensor('invscaleoffd')
+      loc = self.get_output_tensor('loc')
+    else:
+      inputs = self.prepare_inputs(**inputs)
+      loc, secs = self.build_loc_secs(**inputs)
+      invscale = secs[0]
+      invscaled, invscaleoffd = invscale[0], invscale[1]
+    
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+      xDim = self.xdim
+      NTbins = self.max_steps
+      Nsamps = tf.shape(loc)[0]
+      
+#       invscaled = invscale[0]
+#       invscaleoffd = invscale[1]
+      
+      prenoise_NxTxd = tf.random_normal([Nsamps, NTbins, xDim], dtype=tf.float64)
+      
+      aux_fn = lambda _, seqs : blk_chol_inv(seqs[0], seqs[1], seqs[2],
+                                             lower=False, transpose=True)
+      noise = tf.scan(fn=aux_fn, elems=[invscaled, invscaleoffd, prenoise_NxTxd],
+                      initializer=tf.zeros_like(prenoise_NxTxd[0],
+                                                dtype=tf.float64) )
+      samp = tf.add(loc, noise, name='sample')
+
+    if not self._is_built:
+      self.fill_oslot_with_tensor(0, samp)
+
+    return samp, (loc, [invscaled, invscaleoffd])
+  
+  def build_entropy(self, name=None, **inputs):
+    """
+    """
+    return self.build_entropy_secs(name=name, **inputs)[0]
+  
+  def build_entropy_secs(self, name=None, **inputs):
+    """
+    Build the Entropy. 
     
     Args:
         Input (tf.Tensor):
@@ -609,25 +691,54 @@ class MergeSeqsNormalwNormalEv(MergeNode):
     Returns:
         - Entropy: The entropy of the Recognition Model
     """
+    print("Building entropy, ", self.name)
     if not self._is_built:
       raise ValueError("Cannot access entropy attribute for unbuilt node")
-    invscale_d = self.get_output_tensor('scaled')
+    
+    if not inputs:
+      invscaled = self.get_output_tensor('invscaled')
+      invscaleoffd = self.get_output_tensor('invscaleoffd')
+      invscale = [invscaled, invscaleoffd]
+    else:
+      inputs = self.prepare_inputs(**inputs)
+      invscale = self.build_invscale(**inputs)
+      invscaled = invscale[0]
+#       if 'invscaled' in inputs:
+#         invscaled = inputs['invscaled']
+#       else:
+#         try:
+#           # TODO: Make sure the inputs are providing something new, here and
+#           # everywhere else. VERY NASTY BUG!
+#           inputs = self.prepare_inputs(**inputs)
+#           invscale, _ = self.build_invscale(**inputs)
+#           invscaled = invscale[0]
+#         except:
+#           raise ValueError("Could not define `self.entropy`")
 
     NTbins = self.max_steps
     xDim = self.xdim
-    Nsamps = tf.shape(invscale_d)[0]
+    Nsamps = tf.shape(invscaled)[0]
 
-    invscale_d = tf.reshape(invscale_d, [Nsamps*NTbins, xDim, xDim])
-
+    invscaled = tf.reshape(invscaled, [Nsamps*NTbins, xDim, xDim])
+    
     # compute entropy
     Nsamps = tf.cast(Nsamps, tf.float64)        
     NTbins = tf.cast(NTbins, tf.float64)        
-    log_det = -2.0*tf.reduce_sum(tf.log(tf.matrix_determinant(invscale_d)))
+    log_det = -2.0*tf.reduce_sum(tf.log(tf.matrix_determinant(invscaled)))
     entropy = tf.add(0.5*Nsamps*NTbins*(1 + np.log(2*np.pi)), 0.5*log_det,
-                     name='Entropy') # xdim?
-    self.builder.add_to_output_names(self.name+':Entropy', entropy)
+                     name='entropy') # xdim?
+
+    if name is None:
+      name = self.name + ':entropy'
+    else:
+      name = self.name + ':' + name
     
-    return entropy
+    if name in self.builder.otensor_names:
+      raise ValueError("name {} has already been defined, pass a different"
+                       "argument `name`".format(name))
+    self.builder.add_to_output_names(name, entropy)
+    
+    return entropy, (invscale,)
   
   
   

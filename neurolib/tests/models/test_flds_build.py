@@ -39,7 +39,7 @@ class FLDSTestBuild(tf.test.TestCase):
     """
     """
     print("\nTest 0: fLDS initialization")
-    fLDS(input_dims=[[10]],
+    fLDS(main_input_dim=[[10]],
          state_dim=[[3]])
   
 

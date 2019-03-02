@@ -241,13 +241,19 @@ class ANode(abc.ABC):
     dictionary is pickled when a model is saved and loaded upon restore to
     provide access to the names in the tensorflow graph.
     """
-    oname = self.oslot_names[oslot] if name is None else name
+    name = self.oslot_names[oslot] if name is None else name
 
-    oslot_name = self.name + '_' + oname
+    oslot_name = self.name + '_' + name
     o = tf.identity(tensor, name=oslot_name)
-    self._oslot_to_otensor[oname] = o
-    o_rname = self.name + ':' + oname
-    self.builder.otensor_names[o_rname] = o.name
+    self._oslot_to_otensor[name] = o
+    oname = self.name + ':' + name
+    self.builder.otensor_names[oname] = o.name
+    
+  def add_oname(self, oname, tensor):
+    """
+    """
+    oname = self.name + ':' + oname
+    self.builder.otensor_names[oname] = tensor.name
           
   def get_input_tensor(self, islot, iname):
     """
@@ -287,7 +293,7 @@ class ANode(abc.ABC):
     """
     raise NotImplementedError("Please implement me.")
 
-  def build_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, **inputs):
     """
     Evaluate the node on a dict of inputs. 
     """
@@ -297,11 +303,20 @@ class ANode(abc.ABC):
     """
     Build the node
     """
-    raise NotImplementedError("Please implement me.")    
+    raise NotImplementedError("Please implement me.")
   
-  def _build_model_outputs(self):
+  def fetch_tensor_by_oname(self, oname):
     """
-    Build outputs that belong to the model, not to the node 
     """
-    return
+    oname = self.name + ':' + oname
+    tname = self.builder.otensor_names[oname]
+    return tf.get_default_graph().get_tensor_by_name(tname)
+  
+  def get_inode_islot(self, inode):
+    """
+    """
+    if isinstance(inode, ANode):
+      inode = inode.name
+    return self.inputs_list.index(inode)
+  
   

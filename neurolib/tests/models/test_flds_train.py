@@ -54,13 +54,16 @@ class fLDSTestTrain(tf.test.TestCase):
     print("Yshape", Yshape)
     dataset['train_Observation'] = Ytrain
     dataset['valid_Observation'] = datadict['Yvalid']
-    max_steps, input_dims = Yshape[-2], Yshape[-1]
+    max_steps, input_dim = Yshape[-2], Yshape[-1]
       
-    flds = fLDS(input_dims=input_dims,
+    flds = fLDS(main_input_dim=input_dim,
                 state_dim=[[2]],
                 max_steps=max_steps,
                 save_on_valid_improvement=False)
     flds.train(dataset, num_epochs=10)
+    
+    A = flds.eval(dataset, 'LDS:A', key='train')
+    print('A', A)
     
 
 if __name__ == '__main__':

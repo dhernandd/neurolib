@@ -14,10 +14,12 @@
 #
 # ==============================================================================
 from neurolib.encoder.evolution_sequence import (RNNEvolutionSequence, 
-                                                 NonlinearDynamicswGaussianNoise)
+                                                 NonlinearDynamicswGaussianNoise,
+  RNNEvolution)
 from neurolib.utils.utils import check_name
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.input import PlaceholderInputNode
+from neurolib.encoder.stochasticevseqs import LDSEvolution
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -98,18 +100,49 @@ class SequentialBuilder(StaticBuilder):
     return node_name
   
   @check_name
-  def addOutputSequence(self,
-                        name=None,
-                        name_prefix=None):
+  def addRNN(self,
+             main_inputs,
+             state_inputs,
+#              node_class,
+             cell_class='basic',
+             mode='forward',
+             name=None,
+             name_prefix=None,
+             **dirs):
     """
-    Add an OutputSequence
     """
-    return self.addOutput(name=name,
-                          is_sequence=True,
-                          name_prefix=name_prefix)
-  
+    if isinstance(main_inputs, str):
+      main_inputs = [main_inputs]
+    if isinstance(state_inputs, str):
+      state_inputs = [state_inputs]
+    
+    num_states = len(state_inputs)
+    if num_states < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_states))
+    
+    self.add_node_to_model_graph()
+    
+#     if isinstance(node_class, str)x:
+#       node_class = self.innernode_dict[node_class]
+    enc_node = RNNEvolution(self,
+                            main_inputs=main_inputs,
+                            state_inputs=state_inputs,
+                            cell_class=cell_class,
+                            mode=mode,
+                            name=name,
+                            name_prefix=name_prefix,
+                            **dirs)
+    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+    
+    self.add_directed_links(state_inputs, enc_node)
+    nsofar = len(state_inputs)
+    self.add_directed_links(main_inputs, enc_node, start_islot=nsofar)
+      
+    return enc_node.name
+             
   @check_name
-  def addInnerSequence(self, 
+  def addInnerSequence(self,
                        state_sizes, 
                        num_inputs=1,
                        node_class='deterministic', 
@@ -124,6 +157,74 @@ class SequentialBuilder(StaticBuilder):
                          is_sequence=True,
                          name=name,
                          **dirs)
+  
+  def addInnerSequence2(self,
+                       state_sizes, 
+                       main_inputs,
+#                        num_inputs=1,
+                       node_class='deterministic', 
+                       name=None,
+                       **dirs):
+    """
+    Add an InnerSequence
+    """
+    return self.addTransformInner(state_sizes,
+                                  main_inputs,
+#                                  num_inputs=num_inputs,
+                                  node_class=node_class,
+                                  is_sequence=True,
+                                  name=name,
+                                  **dirs)
+    
+  def addEvolutionwPriors(self,                       
+                         state_sizes, 
+                         main_inputs,
+                         prior_inputs,
+                         sec_inputs=None,
+#                        num_inputs=1,
+                         node_class=LDSEvolution,
+                         lmbda=None,
+                         name=None,
+                         name_prefix=None,
+                         **dirs):
+    """
+    """
+    if isinstance(main_inputs, str):
+      main_inputs = [main_inputs]
+    if isinstance(prior_inputs, str):
+      prior_inputs = [prior_inputs]
+    if isinstance(sec_inputs, str):
+      sec_inputs = [sec_inputs]
+    elif sec_inputs is None:
+      sec_inputs = []
+      
+    num_inputs = len(main_inputs)
+    if len(main_inputs) < 1:
+      raise ValueError("`InnerNodes must have at least one input "
+                       "(`num_inputs = {}`".format(num_inputs))
+    
+    self.add_node_to_model_graph()
+    
+    if isinstance(node_class, str):
+      node_class = self.innernode_dict[node_class]
+    enc_node = node_class(self,
+                          state_sizes,
+                          main_inputs=main_inputs,
+                          prior_inputs=prior_inputs,
+                          sec_inputs=sec_inputs,
+                          lmbda=lmbda,
+                          name=name,
+                          name_prefix=name_prefix,
+                          **dirs)
+    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+    
+    self.add_directed_links(prior_inputs, enc_node)
+    num_inputs = len(prior_inputs)
+    self.add_directed_links(main_inputs, enc_node, start_islot=num_inputs)
+    num_inputs += len(main_inputs)
+    self.add_directed_links(sec_inputs, enc_node, start_islot=num_inputs)
+      
+    return enc_node.name
   
   def addEvolutionSequence(self,
                            state_sizes,

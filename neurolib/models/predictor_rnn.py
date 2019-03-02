@@ -285,59 +285,59 @@ class PredictorRNN(Model):
                        num_epochs,
                        batch_size=self.batch_size)
     
-  def anal_R2(self,
-              dataset,
-              subdset='valid',
-              axis=None):
-    """
-    """
-    data = dataset[subdset + '_' + 'Observation']
-    preds = self.eval('Prediction:main', dataset, key=subdset)[0] # eval returns a list
-    R2 = compute_R2_from_sequences(data, preds, axis=axis)
-    return R2
-    
-  def anal_kR2(self,
-               dataset,
-               subdset='valid',
-               key='Observation', 
-               up_to_k=10,
-               start_bin=1,
-               end_bin='last'):
-    """
-    FIX!
-    """
-    print(end_bin)
-    data = dataset[subdset + '_' + key]
-    if start_bin == 'first':
-      start_bin = 1
-      
-    def fill_with_zeros(dataset, subdset, key, start_bin):
-      """
-      """
-      dataset = dict(dataset) # do NOT modify original dset
-
-      key = '_'.join([subdset, key])
-      dataset[key][:,start_bin:] = 0.0
-      return dataset
-
-    for k in range(1, up_to_k):
-      kR2 = np.zeros([self.max_steps])
-      for tbin in range(start_bin, self.max_steps):
-        """
-        """
-        dset_zs = fill_with_zeros(dataset, 'valid', 'Features', tbin)
-        preds = self.eval('Prediction:main', dset_zs, key=subdset)[0] # eval returns a list
-        kR2 = compute_R2_from_sequences(data, preds, start_bin=tbin+k)
-      
-      if start_bin == 'last':
-        dataset_zs = fill_with_zeros(dataset, 'valid', 'Features', -k)
-      elif start_bin == 'first':
-        raise NotImplementedError
-       
-      print("dataset.keys()", dataset.keys())
-      preds = self.eval('Prediction:main', dataset_zs, key=subdset)[0] # eval returns a list
-      kR2 = compute_R2_from_sequences(data, preds, start_bin=-k)
-    
-    return kR2
-    
-    
+#   def anal_R2(self,
+#               dataset,
+#               subdset='valid',
+#               axis=None):
+#     """
+#     """
+#     data = dataset[subdset + '_' + 'Observation']
+#     preds = self.eval('Prediction:main', dataset, key=subdset)[0] # eval returns a list
+#     R2 = compute_R2_from_sequences(data, preds, axis=axis)
+#     return R2
+#     
+# #   def anal_kR2(self,
+# #                dataset,
+# #                subdset='valid',
+# #                key='Observation', 
+# #                up_to_k=10,
+# #                start_bin=1,
+# #                end_bin='last'):
+# #     """
+# #     FIX!
+# #     """
+# #     print(end_bin)
+# #     data = dataset[subdset + '_' + key]
+# #     if start_bin == 'first':
+# #       start_bin = 1
+# #       
+# #     def fill_with_zeros(dataset, subdset, key, start_bin):
+# #       """
+# #       """
+# #       dataset = dict(dataset) # do NOT modify original dset
+# # 
+# #       key = '_'.join([subdset, key])
+# #       dataset[key][:,start_bin:] = 0.0
+# #       return dataset
+# # 
+# #     for k in range(1, up_to_k):
+# #       kR2 = np.zeros([self.max_steps])
+# #       for tbin in range(start_bin, self.max_steps):
+# #         """
+# #         """
+# #         dset_zs = fill_with_zeros(dataset, 'valid', 'Features', tbin)
+# #         preds = self.eval('Prediction:main', dset_zs, key=subdset)[0] # eval returns a list
+# #         kR2 = compute_R2_from_sequences(data, preds, start_bin=tbin+k)
+# #       
+# #       if start_bin == 'last':
+# #         dataset_zs = fill_with_zeros(dataset, 'valid', 'Features', -k)
+# #       elif start_bin == 'first':
+# #         raise NotImplementedError
+# #        
+# #       print("dataset.keys()", dataset.keys())
+# #       preds = self.eval('Prediction:main', dataset_zs, key=subdset)[0] # eval returns a list
+# #       kR2 = compute_R2_from_sequences(data, preds, start_bin=-k)
+# #     
+# #     return kR2
+# #     
+#     

@@ -15,8 +15,11 @@
 # ==============================================================================
 
 # pylint: disable=bad-indentation, no-member
-
 from collections import defaultdict
+
+import tensorflow as tf
+
+from neurolib.encoder import initializers_dict
 
 
 class NodeDirectives():
@@ -59,7 +62,8 @@ class NodeDirectives():
       self._process_netgrowrate(dirset, directives)
       self._process_numnodes(dirset, directives)
       self._process_activations(dirset, directives)
-      self._process_rangeNNws(dirset, directives)
+      self._process_winitializers(dirset, directives)
+      self._process_binitializers(dirset, directives)
     
   def _process_layers(self, dirset, directives):
     """
@@ -94,8 +98,11 @@ class NodeDirectives():
       netgrowrate = getattr(self, dirset+'netgrowrate', 1.0)
       numnodes = directives.pop('numnodes')
       if isinstance(numnodes, int):
-        setattr(self, dirset+'numnodes', [numnodes*int(netgrowrate) for _ 
-                                          in range(numlayers-1)])
+        nn = []
+        for _ in range(numlayers - 1):
+          nn.append(numnodes)
+          numnodes = int(numnodes*netgrowrate)
+        setattr(self, dirset+'numnodes', nn)
       else:
         assert len(numnodes) == numlayers - 1
         setattr(self, dirset+'numnodes', numnodes)
@@ -113,6 +120,96 @@ class NodeDirectives():
         assert len(activations) == numlayers
         setattr(self, dirset+'activations', activations)
         
+  def _process_winitializers(self, dirset, directives):
+    """
+    """
+    numlayers = getattr(self, dirset+'numlayers')
+    
+    def process_ranges():
+      """
+      """
+      wranges = directives.pop('winitranges')
+      if isinstance(wranges, float):
+        return [wranges for _ in range(numlayers)]
+      return wranges
+    
+    winit = directives.pop('winitializers') if 'winitializers' in directives else 'orthogonal'
+    if winit == 'xavier':
+      winitializers = [initializers_dict['xavier']() for _ in range(numlayers)]
+    else:
+      winitrange_list = ([1.0 for _ in range(numlayers)] if
+                         'winitranges' not in directives else process_ranges())
+      if winit == 'normal':
+        winitializers = [initializers_dict['normal'](stddev=winitrange_list[i])
+                         for i in range(numlayers)]
+      elif winit =='orthogonal':
+        winitializers = [initializers_dict['orthogonal'](gain=winitrange_list[i])
+                         for i in range(numlayers)]
+      elif isinstance(winit, list):
+        args = {'normal' : 'stddev',
+                'orthogonal' : 'gain'}
+        kwargs_list = []
+        for wrange, initzer in zip(winitrange_list, winit):
+          if initzer == 'xavier':
+            kwargs_list.append({})
+          elif initzer == 'uniform':
+            kwargs_list.append({'minval' : -wrange,
+                                'maxval' : wrange})
+          else:
+            kwargs_list.append({args[initzer] : wrange})
+        winitializers = [initializers_dict[winit[i]](**(kwargs_list[i]))
+                         for i in range(numlayers)]
+      else:
+        raise ValueError
+    setattr(self, dirset+'winitializers', winitializers)
+  
+  def _process_binitializers(self, dirset, directives):
+    """
+    """
+    numlayers = getattr(self, dirset+'numlayers')
+    
+    def process_ranges():
+      """
+      """
+      branges = directives['binitranges']
+      if isinstance(branges, int):
+        return [branges for _ in range(numlayers)]
+      return branges
+
+    binit = directives['binitializers'] if 'binitializers' in directives else 'zeros'
+    if binit == 'zeros':
+      binitializers = [initializers_dict['zeros'](tf.float64) for _ in range(numlayers)]
+    elif binit == 'xavier':
+      binitializers = [initializers_dict['xavier']() for _ in range(numlayers)]
+    else:
+      binitrange_list = ([0.0 for _ in range(numlayers)] if
+                         'binitranges' not in directives else process_ranges())
+      if binit == 'normal':
+        binitializers = [initializers_dict['normal'](stddev=binitrange_list[i])
+                         for i in range(numlayers)]
+      elif binit =='orthogonal':
+        binitializers = [initializers_dict['orthogonal'](gain=binitrange_list[i])
+                         for i in range(numlayers)]
+      elif isinstance(binit, list):
+        args = {'normal' : 'stddev',
+                'orthogonal' : 'gain'}
+        kwargs_list = []
+        for brange, initzer in zip(binitrange_list, binit):
+          if initzer == 'xavier':
+            kwargs_list.append({})
+          elif initzer == 'zeros':
+            kwargs_list.append({'dtype' : tf.float64})
+          elif initzer == 'uniform':
+            kwargs_list.append({'minval' : -brange,
+                                'maxval' : brange})
+          else:
+            kwargs_list.append({args[initzer] : brange})
+        binitializers = [initializers_dict[binit[i]](**(kwargs_list[i]))
+                         for i in range(numlayers)]
+      else:
+        raise ValueError
+    setattr(self, dirset+'binitializers', binitializers)
+  
   def _process_rangeNNws(self, dirset, directives):
     """
     """

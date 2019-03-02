@@ -97,7 +97,7 @@ def elbo(node_dict, otensor_codes):
   ELBO cost
   """
   if isinstance(otensor_codes, list):
-    pass
+    raise NotImplementedError("")
   else:
     try:
       node_gen = node_dict[otensor_codes[0]]
@@ -110,6 +110,59 @@ def elbo(node_dict, otensor_codes):
     Y = nodeY.get_output_tensor('main')
   
     return tf.reduce_sum(-node_rec.entropy()) - tf.reduce_sum(node_gen.log_prob(Y))
+  
+def elbo_flds(node_dict, otensor_codes):
+  """
+  TODO: Fix!
+  """
+  if isinstance(otensor_codes, list):
+    raise NotImplementedError("")
+  else:
+    try:
+      node_gen = node_dict[otensor_codes[0]]
+      node_post = node_dict[otensor_codes[1]]
+      node_ds = node_dict[otensor_codes[2]]
+    except AttributeError:
+      raise AttributeError("")
+      
+    nodeY = node_dict[otensor_codes[3]]
+    Y = nodeY.get_output_tensor('main')
+    
+    # get a sample from the posterior dist
+    X = node_post.get_output_tensor('main')
+
+    return (- tf.reduce_sum(node_post.build_entropy())
+            - tf.reduce_sum(node_gen.logprob(Y))
+            - tf.reduce_sum(node_ds.logprob(X)))
+    
+def elbo_vind(node_dict, otensor_codes):
+  """
+  """
+  if isinstance(otensor_codes, list):
+    raise NotImplementedError("")
+  else:
+    try:
+      node_gen = node_dict[otensor_codes[0]]
+      node_post = node_dict[otensor_codes[1]]
+      node_ds = node_dict[otensor_codes[2]]
+    except AttributeError:
+      raise AttributeError
+    
+    # get data observations
+    nodeY = node_dict[otensor_codes[3]]
+    Y = nodeY.get_output_tensor('main')
+    
+    # get a sample from the posterior dist
+    X = node_post.get_output_tensor('main')
+    
+    # build the ds logprob and A from the sample
+    logprobX, sec_outs = node_ds.build_logprob_secs(imain0=X)
+    A = sec_outs[0]
+    
+    # all three terms are hence evaluated at the sample
+    return (- tf.reduce_sum(node_post.build_entropy(ids_A=A)) 
+            - tf.reduce_sum(node_gen.logprob(Y))
+            - tf.reduce_sum(logprobX))
 
 def entropy(node_dict, node_names):
   """

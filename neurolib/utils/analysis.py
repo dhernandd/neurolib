@@ -25,12 +25,11 @@ def compute_mean_from_dset(data, axis=None):
 
 def compute_R2_from_sequences(data,
                               preds,
-                              axis=None,
-                              start_bin=0):
+                              axis=None):
   """
   R2 for a sequence
   """
-  mean = np.mean(data[:,start_bin:], axis=axis, keepdims=True)
-  d = np.sum((data[:,start_bin:] - mean)**2, axis=axis)
-  n = np.sum((data[:,start_bin:] - preds[:,start_bin:])**2, axis=axis)
+  mean = np.mean(data, axis=1, keepdims=True)
+  d = np.sum((data - mean)**2)
+  n = np.sum((data - preds)**2, axis=axis)
   return 1.0 - n/d 

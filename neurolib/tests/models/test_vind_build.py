@@ -22,8 +22,8 @@ from neurolib.models.vind import VIND
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 1
-range_from = 1
-range_to = 2
+range_from = 0
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
 class VINDTestBuild(tf.test.TestCase):
@@ -38,8 +38,8 @@ class VINDTestBuild(tf.test.TestCase):
   def test_vind_build0(self):
     """
     """
-    print("\nTest 0: fLDS initialization")
-    VIND(input_dims=[[10]],
+    print("\nTest 0: VIND initialization")
+    VIND(main_input_dim=[[10]],
          state_dim=[[3]])
 
   @unittest.skipIf(1 not in tests_to_run, "Skipping")

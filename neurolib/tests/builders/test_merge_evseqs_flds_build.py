@@ -17,14 +17,15 @@ import unittest
 import tensorflow as tf
 
 from neurolib.builders.sequential_builder import SequentialBuilder
-from neurolib.encoder.normal import NormalPrecisionNode, LDSNode
+from neurolib.encoder.normal import NormalPrecisionNode
+from neurolib.encoder.stochasticevseqs import LDSEvolution, LLDSEvolution
 from neurolib.encoder.merge import MergeSeqsNormalwNormalEv
 from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 2
-run_from = 0
+run_from = 1
 run_to = 2
 tests_to_run = list(range(run_from, run_to))
 
@@ -36,6 +37,7 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
     """
     tf.reset_default_graph()
   
+  @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_mergeNormalEvSeqs(self):
     """
     """
@@ -48,24 +50,26 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
     n1 = builder.addInput([[xdim]],
                           NormalInputNode,
                           name='Prior')
-    ins1 = builder.addInnerSequence([[xdim]],
-                                    num_inputs=1,
-                                    node_class=NormalPrecisionNode,
-                                    name='InnSeq')
-    evs1 = builder.addInnerSequence([[xdim]],
-                                    num_inputs=1,
-                                    node_class=LDSNode,
-                                    name='LDS')
-    m1 = builder.addMergeNode(node_list=[ins1, evs1, n1],
-                              merge_class=MergeSeqsNormalwNormalEv,
-                              name='Recognition')
-    ins2 = builder.addInnerSequence([[ydim]],
-                                    num_inputs=1,
-                                    node_class=NormalPrecisionNode,
-                                    name='Generative')
-    builder.addDirectedLink(is1, ins1, islot=0)
-    builder.addDirectedLink(is2, evs1, islot=0)
-    builder.addDirectedLink(m1, ins2, islot=0)
+    ins1 = builder.addInnerSequence2([[xdim]],
+                                     main_inputs=is1,
+                                     node_class=NormalPrecisionNode,
+                                     name='InnSeq')
+    evs1 = builder.addEvolutionwPriors([[xdim]],
+                                       main_inputs=is2,
+                                       prior_inputs=n1,
+                                       node_class=LDSEvolution,
+                                       name='LDS')
+    m1 = builder.addMergeSeqwDS(seq_inputs=ins1,
+                                ds_inputs=evs1,
+                                prior_inputs=n1,
+                                merge_class=MergeSeqsNormalwNormalEv,
+                                name='Recognition')
+    builder.addInnerSequence2([[ydim]],
+                              main_inputs=m1,
+                              node_class=NormalPrecisionNode,
+                              name='Generative')
+    
+    builder.build()
 
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_merge_build(self):
@@ -81,24 +85,24 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
     n1 = builder.addInput([[xdim]],
                           NormalInputNode,
                           name='Prior')
-    ins1 = builder.addInnerSequence([[xdim]],
-                                    num_inputs=1,
-                                    node_class=NormalPrecisionNode,
-                                    name='InnSeq')
-    evs1 = builder.addInnerSequence([[xdim]],
-                                    num_inputs=1,
-                                    node_class=LDSNode,
-                                    name='LDS')
-    m1 = builder.addMergeNode(node_list=[ins1, evs1, n1],
-                              merge_class=MergeSeqsNormalwNormalEv,
-                              name='Recognition')
-    ins2 = builder.addInnerSequence([[ydim]],
-                                    num_inputs=1,
-                                    node_class=NormalPrecisionNode,
-                                    name='Generative')
-    builder.addDirectedLink(is1, ins1, islot=0)
-    builder.addDirectedLink(is2, evs1, islot=0)
-    builder.addDirectedLink(m1, ins2, islot=0)      
+    ins1 = builder.addInnerSequence2([[xdim]],
+                                     main_inputs=is1,
+                                     node_class=NormalPrecisionNode,
+                                     name='InnSeq')
+    evs1 = builder.addEvolutionwPriors([[xdim]],
+                                       main_inputs=is2,
+                                       prior_inputs=n1,
+                                       node_class=LLDSEvolution,
+                                       name='LLDS')
+    m1 = builder.addMergeSeqwDS(seq_inputs=ins1,
+                                ds_inputs=evs1,
+                                prior_inputs=n1,
+                                merge_class=MergeSeqsNormalwNormalEv,
+                                name='Recognition')
+    builder.addInnerSequence2([[ydim]],
+                              main_inputs=m1,
+                              node_class=NormalPrecisionNode,
+                              name='Generative')
     
     builder.build()
 
