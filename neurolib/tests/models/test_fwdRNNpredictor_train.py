@@ -25,7 +25,7 @@ from neurolib.models.predictor_rnn import PredictorRNN
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS: 3
-range_from = 0
+range_from = 2
 range_to = 3
 tests_to_run = list(range(range_from, range_to))
 
@@ -53,8 +53,11 @@ class RNNPredictorTrainTest(tf.test.TestCase):
     model = PredictorRNN(input_dims=1,
                          state_dims=20,
                          output_dims=1,
-                         max_steps=max_steps)
-#                          save_on_valid_improvement=True) # ok!
+                         max_steps=max_steps,
+                         save_on_valid_improvement=False) # ok!
+
+    print(dataset.keys())
+    
     model.train(dataset, num_epochs=10)
     
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
@@ -70,8 +73,8 @@ class RNNPredictorTrainTest(tf.test.TestCase):
                          output_dims=1,
                          max_steps=max_steps,
                          num_labels=num_labels,
-                         is_categorical=True)
-#                          save_on_valid_improvement=True) # OK!
+                         is_categorical=True,
+                         save_on_valid_improvement=False) # OK!
     model.train(dataset_cat, num_epochs=10)
     
   @unittest.skipIf(2 not in tests_to_run, "Skipping")
@@ -86,12 +89,9 @@ class RNNPredictorTrainTest(tf.test.TestCase):
                          output_dims=1,
                          batch_size=1,
                          max_steps=max_steps,
-                         cell_class='lstm')
-#                          save_on_valid_improvement=True) # OK!
-    for _ in range(5):
-      R2 = model.anal_R2(dataset, 'valid')
-      print("R2", R2)
-      model.train(dataset, num_epochs=3)
+                         cell_class='lstm',
+                         save_on_valid_improvement=False) # OK!
+    model.train(dataset, num_epochs=10)
     
     
 if __name__ == '__main__':

@@ -102,16 +102,29 @@ class VariationalAutoEncoder(Model):
     this_model_dirs = {}
     if self.mode == 'new':
       if self.builder is None:
-        this_model_dirs.update({'rec_loc_numlayers' : 2,
-                                'rec_loc_numnodes' : 128,
-                                'rec_loc_activations' : 'leaky_relu',
-                                'rec_loc_netgrowrate' : 1.0,
-                                'rec_shareparams' : False,
-                                'trainer' : 'gd',
+        this_model_dirs.update({'trainer' : 'gd',
                                 'genclass' : NormalTriLNode,
-                                'recclass' : NormalTriLNode})
+                                'recclass' : NormalTriLNode,
+                                'rec_loc_numlayers' : 3,
+                                'rec_loc_numnodes' : 64,
+                                'rec_loc_activations' : 'softplus',
+                                'rec_loc_winitializers' : 'orthogonal',
+                                'rec_scale_numlayers' : 3,
+                                'rec_scale_numnodes' : 64,
+                                'rec_scale_activations' : 'softplus',
+                                'rec_scale_winitializers' : 'orthogonal',
+                                'rec_shareparams' : False,
+                                'gen_loc_numlayers' : 3,
+                                'gen_loc_numnodes' : 64,
+                                'gen_loc_activations' : 'softplus',
+                                'gen_loc_winitializers' : 'orthogonal',
+                                'gen_scale_numlayers' : 3,
+                                'gen_scale_numnodes' : 64,
+                                'gen_scale_activations' : 'softplus',
+                                'gen_scale_winitializers' : 'orthogonal'})
         this_model_dirs.update(directives)
-    this_model_dirs.update({'tr_optimizer' : 'adam'})
+    this_model_dirs.update({'tr_optimizer' : 'adam',
+                            'tr_lr' : 1e-4})
     super(VariationalAutoEncoder, self)._update_default_directives(**this_model_dirs)
     
   def build(self):
@@ -134,18 +147,20 @@ class VariationalAutoEncoder(Model):
       
       self.builder = builder = StaticBuilder(scope=self._main_scope)
       
-      i1 = builder.addInput(self.input_dim, name='Observation', **obs_dirs)
-      rec = builder.addInner(self.state_dim,
-                             name='Recognition',
-                             node_class=rec_nclass,
-                             **rec_dirs)
-      gen = builder.addInner(self.input_dim,
-                             name='Generative',
-                             node_class=gen_nclass,
-                             **gen_dirs)
+      i1 = builder.addInput(self.input_dim,
+                            name='Observation',
+                            **obs_dirs)
+      rec = builder.addTransformInner(self.state_dim,
+                                      main_inputs=i1,
+                                      name='Recognition',
+                                      node_class=rec_nclass,
+                                      **rec_dirs)
+      builder.addTransformInner(self.input_dim,
+                                main_inputs=rec,
+                                name='Generative',
+                                node_class=gen_nclass,
+                                **gen_dirs)
 
-      builder.addDirectedLink(i1, rec, islot=0)
-      builder.addDirectedLink(rec, gen, islot=0)
     else:
       self._check_build()
       builder.scope = self._main_scope
@@ -171,6 +186,9 @@ class VariationalAutoEncoder(Model):
     if self.save:
       self.save_otensor_names()
 
+    print("\nThe following names are available for evaluation:")
+    for name in sorted(self.otensor_names.keys()): print('\t', name)
+
     self._is_built = True
     
   def _check_build(self):
@@ -179,26 +197,30 @@ class VariationalAutoEncoder(Model):
     """
     pass
   
-  def train(self, dataset, num_epochs=100):
-    """
-    Trains the model. 
-    
-    The dataset provided by the client should have keys
-    
-    dset_Observation
-    
-    where dset is one of ['train', 'valid', 'test']
-    """
-    self._check_dataset_correctness(dataset)
-    dataset_dict = self.prepare_datasets(dataset)
-
-    self.trainer.train(dataset_dict,
-                       num_epochs,
-                       batch_size=self.batch_size)
-    
-  def _check_dataset_correctness(self, dataset):
+#   def train(self, dataset, num_epochs=100):
+#     """
+#     Trains the model. 
+#     
+#     The dataset provided by the client should have keys
+#     
+#     dset_Observation
+#     
+#     where dset is one of ['train', 'valid', 'test']
+#     """
+#     self._check_dataset_correctness(dataset)
+#     dataset_dict = self.prepare_datasets(dataset)
+# 
+#     self.trainer.train(dataset_dict,
+#                        num_epochs,
+#                        batch_size=self.batch_size)
+#     
+  def check_dataset_correctness(self, user_dataset):
     """
     TODO:
     """
-    pass
+    keys = ['train_Observation', 'valid_Observation']
+    for key in keys:
+      if key not in user_dataset:
+        raise AttributeError("dataset must contain key `{}` ".format(key))
+
   

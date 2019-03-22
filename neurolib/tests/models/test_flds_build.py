@@ -32,13 +32,14 @@ class FLDSTestBuild(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_init(self):
     """
     """
-    print("\nTest 0: fLDS initialization")
+    print("Test 0: fLDS initialization")
     fLDS(main_input_dim=[[10]],
          state_dim=[[3]])
   

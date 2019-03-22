@@ -13,13 +13,12 @@
 # limitations under the License.
 #
 # ==============================================================================
-from neurolib.encoder.evolution_sequence import (RNNEvolutionSequence, 
-                                                 NonlinearDynamicswGaussianNoise,
-  RNNEvolution)
+from neurolib.encoder.rnn import RNNEvolution, NormalRNN
 from neurolib.utils.utils import check_name
 from neurolib.builders.static_builder import StaticBuilder
 from neurolib.encoder.input import PlaceholderInputNode
 from neurolib.encoder.stochasticevseqs import LDSEvolution
+from neurolib.encoder.seq_cells import NormalTriLCell
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -59,8 +58,8 @@ class SequentialBuilder(StaticBuilder):
     The 2 input nodes define placeholders for the features and response data
   
   """
-  ev_seq_dict = {'rnn' : RNNEvolutionSequence,
-                 'NLDSwGnoise' : NonlinearDynamicswGaussianNoise}
+  ev_seq_dict = {'rnn' : RNNEvolution}
+  
   def __init__(self,
                max_steps,
                scope,
@@ -103,7 +102,7 @@ class SequentialBuilder(StaticBuilder):
   def addRNN(self,
              main_inputs,
              state_inputs,
-#              node_class,
+             rnn_class=RNNEvolution,
              cell_class='basic',
              mode='forward',
              name=None,
@@ -123,45 +122,38 @@ class SequentialBuilder(StaticBuilder):
     
     self.add_node_to_model_graph()
     
-#     if isinstance(node_class, str)x:
-#       node_class = self.innernode_dict[node_class]
-    enc_node = RNNEvolution(self,
-                            main_inputs=main_inputs,
-                            state_inputs=state_inputs,
-                            cell_class=cell_class,
-                            mode=mode,
-                            name=name,
-                            name_prefix=name_prefix,
-                            **dirs)
-    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+    rnn_node = rnn_class(self,
+                         main_inputs=main_inputs,
+                         state_inputs=state_inputs,
+                         cell_class=cell_class,
+                         mode=mode,
+                         name=name,
+                         name_prefix=name_prefix,
+                         **dirs)
+    self.nodes[rnn_node.name] = self._label_to_node[rnn_node.label] = rnn_node
     
-    self.add_directed_links(state_inputs, enc_node)
-    nsofar = len(state_inputs)
-    self.add_directed_links(main_inputs, enc_node, start_islot=nsofar)
+    self.add_directed_links(state_inputs, rnn_node)
+    nnodes_so_far = len(state_inputs)
+    self.add_directed_links(main_inputs, rnn_node,
+                            start_islot=nnodes_so_far)
       
-    return enc_node.name
+    return rnn_node.name
+  
+  def addNormalRNN(self, main_inputs, state_inputs, cell_class=NormalTriLCell,
+                   mode='forward', name=None, name_prefix=None, **dirs):
+    """
+    """
+    return self.addRNN(main_inputs, state_inputs, 
+                       rnn_class=NormalRNN,
+                       cell_class=cell_class,
+                       mode=mode,
+                       name=name,
+                       name_prefix=name_prefix,
+                       **dirs)
              
-  @check_name
   def addInnerSequence(self,
                        state_sizes, 
-                       num_inputs=1,
-                       node_class='deterministic', 
-                       name=None,
-                       **dirs):
-    """
-    Add an InnerSequence
-    """
-    return self.addInner(state_sizes,
-                         num_inputs=num_inputs,
-                         node_class=node_class,
-                         is_sequence=True,
-                         name=name,
-                         **dirs)
-  
-  def addInnerSequence2(self,
-                       state_sizes, 
                        main_inputs,
-#                        num_inputs=1,
                        node_class='deterministic', 
                        name=None,
                        **dirs):
@@ -170,7 +162,6 @@ class SequentialBuilder(StaticBuilder):
     """
     return self.addTransformInner(state_sizes,
                                   main_inputs,
-#                                  num_inputs=num_inputs,
                                   node_class=node_class,
                                   is_sequence=True,
                                   name=name,

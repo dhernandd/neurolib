@@ -15,12 +15,10 @@
 # ==============================================================================
 import pickle
 
-import numpy as np
-
 from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
-from neurolib.utils.analysis import compute_R2_from_sequences
+from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -36,7 +34,7 @@ class PredictorRNN(Model):
                builder=None,
                batch_size=1,
                max_steps=25,
-               seq_class='rnn',
+#                 seq_class='rnn',
                cell_class='basic',
                input_dims=None,
                state_dims=None,
@@ -97,7 +95,7 @@ class PredictorRNN(Model):
 
         # cell, seq classes
         self.cell_class = cell_class
-        self.seq_class = seq_class
+#         self.seq_class = seq_class
 
         # shapes
         if input_dims is None:
@@ -202,27 +200,33 @@ class PredictorRNN(Model):
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
                                                  max_steps=self.max_steps)
       
-      nstate_dims, ninput_dims = len(self.state_dims), len(self.input_dims)
-      ninputs_evseq = ninput_dims + nstate_dims
       is1 = builder.addInputSequence(self.input_dims,
                                      name='Features',
                                      **ftrs_dirs)
-      evs1 = builder.addEvolutionSequence(state_sizes=self.state_dims,
-                                          num_inputs=ninputs_evseq,
-                                          ev_seq_class=self.seq_class,
-                                          cell_class=self.cell_class,
-                                          name='RNN',
-                                          **rnn_dirs)
+      rnn_priors = []
+      for i, state_dim in enumerate(self.state_dims):
+        prior = builder.addInput(state_dim[0],
+                                 iclass=NormalInputNode,
+                                 name='Prior'+str(i))
+        rnn_priors.append(prior)
+         
+      print("PredictorRNN; rnn_priors", rnn_priors)
+      rnn = builder.addRNN(main_inputs=is1,
+                           state_inputs=rnn_priors,
+                           cell_class=self.cell_class,
+                           name='RNN',
+                           **rnn_dirs)
+
       if self.is_categorical:
-        inn1 = builder.addInnerSequence(self.num_labels,
-                                        name='Prediction',
-                                        **pred_dirs)
+        builder.addInnerSequence(self.num_labels,
+                                 main_inputs=rnn,
+                                 name='Prediction',
+                                 **pred_dirs)
       else:
-        inn1 = builder.addInnerSequence(self.output_dims,
-                                        name='Prediction',
-                                        **pred_dirs)            
-      builder.addDirectedLink(is1, evs1, islot=nstate_dims)
-      builder.addDirectedLink(evs1, inn1, islot=0)
+        builder.addInnerSequence(self.output_dims,
+                                 main_inputs=rnn,
+                                 name='Prediction',
+                                 **pred_dirs)            
     else:
       builder.scope = self._main_scope
     data_type = 'int32' if self.is_categorical else 'float64'
@@ -253,7 +257,10 @@ class PredictorRNN(Model):
                              **tr_dirs)
     if self.save:
       self.save_otensor_names()
-      
+    
+    print("\nThe following names are available for evaluation:")
+    for name in sorted(self.otensor_names.keys()): print('\t', name)
+
     self._is_built = True
 
   def _check_custom_build(self):
@@ -264,80 +271,11 @@ class PredictorRNN(Model):
       if nname not in self.builder.nodes:
         raise AttributeError("Node {} not found in custom build".format(nname))
   
-  def _check_dataset_correctness(self, dataset):
+  def check_dataset_correctness(self, user_dataset):
     """
     Check that the provided dataset is coconsistent with the RNNPredictor names
     """
-    for key in ['train_Observation', 'valid_Observation']:
-      if key not in dataset:
+    for key in ['train_Observation', 'valid_Observation',
+                'train_Features', 'valid_Features']:
+      if key not in user_dataset:
         raise AttributeError("dataset must contain key `{}` ".format(key))
-      
-  def train(self, dataset, num_epochs=100):
-    """
-    Train the RNNClassifier model. 
-    
-    The dataset, provided by the client, should have keys:
-    """
-    self._check_dataset_correctness(dataset)
-    dataset_dict = self.prepare_datasets(dataset)
-
-    self.trainer.train(dataset_dict,
-                       num_epochs,
-                       batch_size=self.batch_size)
-    
-#   def anal_R2(self,
-#               dataset,
-#               subdset='valid',
-#               axis=None):
-#     """
-#     """
-#     data = dataset[subdset + '_' + 'Observation']
-#     preds = self.eval('Prediction:main', dataset, key=subdset)[0] # eval returns a list
-#     R2 = compute_R2_from_sequences(data, preds, axis=axis)
-#     return R2
-#     
-# #   def anal_kR2(self,
-# #                dataset,
-# #                subdset='valid',
-# #                key='Observation', 
-# #                up_to_k=10,
-# #                start_bin=1,
-# #                end_bin='last'):
-# #     """
-# #     FIX!
-# #     """
-# #     print(end_bin)
-# #     data = dataset[subdset + '_' + key]
-# #     if start_bin == 'first':
-# #       start_bin = 1
-# #       
-# #     def fill_with_zeros(dataset, subdset, key, start_bin):
-# #       """
-# #       """
-# #       dataset = dict(dataset) # do NOT modify original dset
-# # 
-# #       key = '_'.join([subdset, key])
-# #       dataset[key][:,start_bin:] = 0.0
-# #       return dataset
-# # 
-# #     for k in range(1, up_to_k):
-# #       kR2 = np.zeros([self.max_steps])
-# #       for tbin in range(start_bin, self.max_steps):
-# #         """
-# #         """
-# #         dset_zs = fill_with_zeros(dataset, 'valid', 'Features', tbin)
-# #         preds = self.eval('Prediction:main', dset_zs, key=subdset)[0] # eval returns a list
-# #         kR2 = compute_R2_from_sequences(data, preds, start_bin=tbin+k)
-# #       
-# #       if start_bin == 'last':
-# #         dataset_zs = fill_with_zeros(dataset, 'valid', 'Features', -k)
-# #       elif start_bin == 'first':
-# #         raise NotImplementedError
-# #        
-# #       print("dataset.keys()", dataset.keys())
-# #       preds = self.eval('Prediction:main', dataset_zs, key=subdset)[0] # eval returns a list
-# #       kR2 = compute_R2_from_sequences(data, preds, start_bin=-k)
-# #     
-# #     return kR2
-# #     
-#     

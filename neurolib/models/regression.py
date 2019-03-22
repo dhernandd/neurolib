@@ -158,7 +158,7 @@ class Regression(Model):
     """
     this_node_dirs = {}
     if self.mode == 'new' and self.builder is None:
-      this_node_dirs.update({'enc_numlayers' : 2,
+      this_node_dirs.update({'enc_numlayers' : 1,
                              'enc_numnodes' : 128,
                              'enc_activations' : 'leaky_relu',
                              'enc_netgrowrate' : 1.0})
@@ -184,12 +184,10 @@ class Regression(Model):
       in0 = builder.addInput(self.input_dim,
                              name="Features",
                              **ftrs_dirs)
-      enc1 = builder.addInner(1,
-                              num_inputs=self.output_dim,
-                              name='Prediction',
-                              **enc_dirs)
-
-      builder.addDirectedLink(in0, enc1, islot=0)
+      builder.addTransformInner(state_size=1,
+                                main_inputs=in0,
+                                name='Prediction',
+                                **enc_dirs)
     else:
       self._check_custom_build()
       builder.scope = self._main_scope
@@ -209,11 +207,13 @@ class Regression(Model):
     
     # trainer object
     self.trainer = GDTrainer(model=self,
-#                              root_rslts_dir=self.root_rslts_dir,
                              keep_logs=self.keep_logs,
                              **tr_dirs)
     if self.save: # save
       self.save_otensor_names()
+      
+    print("\nThe following names are available for evaluation:")
+    for name in sorted(self.otensor_names.keys()): print('\t', name)
       
     self._is_built = True
     
@@ -224,30 +224,30 @@ class Regression(Model):
     if 'Prediction' not in self.builder.nodes:
       raise AttributeError("Node 'Prediction' not found in CustomBuild")
     
-  def _check_dataset_correctness(self, dataset):
+  def check_dataset_correctness(self, user_dataset):
     """
-    Check that the provided dataset adheres to the Regression class specification
+    Check that the provided user_dataset adheres to the Regression class specification
     """
     must_have_keys = ['train_Observation', 'train_Features',
                       'valid_Observation', 'valid_Features']
     for key in must_have_keys:
-      if key not in dataset:
-        raise AttributeError("dataset does not have key {}".format(key))
+      if key not in user_dataset:
+        raise AttributeError("user_dataset does not have key {}".format(key))
   
-  def train(self, dataset, num_epochs=100):
-    """
-    Train the Regression model. 
-    
-    The dataset, provided by the client, should have keys
-    
-    train_Observation, train_Features
-    valid_Observation, valid_Features
-    test_Observation, test_Features
-    """
-    self._check_dataset_correctness(dataset)
-    dataset_dict = self.prepare_datasets(dataset)
-
-    self.trainer.train(dataset_dict,
-                       num_epochs,
-                       batch_size=self.batch_size)
-        
+#   def train(self, dataset, num_epochs=100):
+#     """
+#     Train the Regression model. 
+#     
+#     The dataset, provided by the client, should have keys
+#     
+#     train_Observation, train_Features
+#     valid_Observation, valid_Features
+#     test_Observation, test_Features
+#     """
+#     self._check_dataset_correctness(dataset)
+#     dataset_dict = self.prepare_datasets(dataset)
+# 
+#     self.trainer.train(dataset_dict,
+#                        num_epochs,
+#                        batch_size=self.batch_size)
+#         

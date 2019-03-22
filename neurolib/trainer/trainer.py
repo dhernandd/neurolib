@@ -36,8 +36,8 @@ class Trainer(abc.ABC):
     self.directives = {}
     self.directives.update(dirs)
 
-  @abc.abstractmethod 
-  def update_gd(self, dataset, batch_size):
-    """
-    """
-    raise NotImplementedError("")
+#   @abc.abstractmethod 
+#   def update_gd(self, dataset, batch_size):
+#     """
+#     """
+#     raise NotImplementedError("")

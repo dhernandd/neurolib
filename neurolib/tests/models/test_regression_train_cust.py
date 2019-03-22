@@ -36,6 +36,12 @@ with open(path + '/datadict_regression', 'rb') as f1:
 class RegressionTestTrainCust(tf.test.TestCase):
   """
   """
+  def setUp(self):
+    """
+    """
+    print()
+    tf.reset_default_graph()
+  
   @unittest.skipIf(0 not in tests_to_run, "Skipping Test 0")
   def test_train_custom_builder(self):
     """
@@ -51,18 +57,21 @@ class RegressionTestTrainCust(tf.test.TestCase):
 
     builder = StaticBuilder('CustBuild')
     in0 = builder.addInput(input_dim, name="Features")
-    enc1 = builder.addInner(5, directives=enc_dirs)
-    enc2 = builder.addInner(1, output_dim, directives=enc_dirs,
-                            name='Prediction')
-
-    builder.addDirectedLink(in0, enc1, islot=0)
-    builder.addDirectedLink(enc1, enc2, islot=0)
+    enc1 = builder.addTransformInner(5,
+                                     main_inputs=in0,
+                                     **enc_dirs)
+    builder.addTransformInner(state_size=1,
+                              main_inputs=enc1,
+                              directives=enc_dirs,
+                              name='Prediction')
     
     # Pass the builder object to the Regression Model
     reg = Regression(builder=builder,
                      output_dim=output_dim)
 #                      save_on_valid_improvement=True) # ok!
-    reg.train(dataset, num_epochs=10)
+    
+    reg.train(dataset,
+              num_epochs=10)
 
   @unittest.skipIf(1 not in tests_to_run, "Skipping Test 1")
   def test_train_custom_builder2(self):
@@ -79,19 +88,18 @@ class RegressionTestTrainCust(tf.test.TestCase):
                 'netgrowrate' : 1.0 }
     input_dim = 2
     in0 = builder.addInput(input_dim, name="Features")
-    enc1 = builder.addInner(10, num_inputs=1, directives=enc_dirs)
-    enc2 = builder.addInner(10, num_inputs=1, directives=enc_dirs)
-    enc3 = builder.addInner(1,
-                            num_inputs=2,
-                            numlayers=1,
-                            activations='linear',
-                            name='Prediction')
+    enc1 = builder.addTransformInner(10,
+                                     main_inputs=in0,
+                                     directives=enc_dirs)
+    enc2 = builder.addTransformInner(10,
+                                     main_inputs=in0,
+                                     directives=enc_dirs)
+    builder.addTransformInner(1,
+                              main_inputs=[enc1, enc2],
+                              numlayers=1,
+                              activations='linear',
+                              name='Prediction')
 
-    builder.addDirectedLink(in0, enc1, islot=0)
-    builder.addDirectedLink(in0, enc2, islot=0)
-    builder.addDirectedLink(enc1, enc3, islot=0)
-    builder.addDirectedLink(enc2, enc3, islot=1)
-    
     reg = Regression(input_dim=2,
                      output_dim=1,
                      builder=builder)
@@ -114,14 +122,17 @@ class RegressionTestTrainCust(tf.test.TestCase):
     input_dim = 2
     in0 = builder.addInput(input_dim, name='Features')
     
-    cust = builder.createCustomNode(1, 1, name="Prediction")
-    cust_in1 = cust.addInner(3, directives=enc_dirs)
-    cust_in2 = cust.addInner(1, directives=enc_dirs)
-    cust.addDirectedLink(cust_in1, cust_in2, islot=0)
-    cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareOslot(oslot='main', innernode_name=cust_in2, inode_oslot='main')
+    cust = builder.createCustomNode(inputs=[in0],
+                                    num_outputs=1,
+                                    name="Prediction")
+    cust_in1 = cust.addTransformInner(3,
+                                      main_inputs=[0],
+                                      directives=enc_dirs)
+    cust_in2 = cust.addTransformInner(1,
+                                      main_inputs=cust_in1,
+                                      directives=enc_dirs)
+    cust.declareOslot(oslot=0, innernode_name=cust_in2, inode_oslot_name='main')
     
-    builder.addDirectedLink(in0, cust, islot=0)
     
     reg = Regression(builder=builder,
                      input_dim=2,

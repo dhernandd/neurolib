@@ -94,6 +94,17 @@ class InputNode(ANode):
     Build the InputNode.
     """
     raise NotImplementedError("Please implement me")
+  
+  def __call__(self, *inputs):
+    """
+    Evaluate the node on a list of inputs.    
+    """
+    if inputs:
+      raise ValueError("A call an InputNode must have no arguments")
+    if not self._is_built:
+      raise ValueError("Must build the InputNode before calling")
+    
+    return self.get_output_tensor("main")
     
 
 class PlaceholderInputNode(InputNode):
@@ -162,23 +173,15 @@ class PlaceholderInputNode(InputNode):
     bsz = self.batch_size
     mx_stps = self.max_steps
     const_sh = [bsz, mx_stps] if self.is_sequence else [bsz]
-    
+     
     ss = self.state_sizes[0]
     return {self.oslot_names[0] : const_sh + ss}
-    
-  def __call__(self, *inputs):
-    """
-    Call the InputNode
-    """
-    if inputs:
-      raise ValueError("A call an InputNode must have no arguments")
-    return self.build_outputs()
-    
-  def build_outputs(self, islot_to_itensor=None):
+     
+  def build_outputs(self, **inputs):
     """
     Evaluate the node on a dict of inputs. 
     """
-    if islot_to_itensor is not None:
+    if inputs:
       raise ValueError("`InputNode.build_outputs` must have no arguments")
 
     # directives
@@ -186,7 +189,8 @@ class PlaceholderInputNode(InputNode):
     
     oname = self.oslot_names[0]
     dtype = self.type_dict[dirs.dtype]
-    oshape = self.oshapes[oname]
+    oshape = self.get_oshape(oname)
+  
     return tf.placeholder(dtype, shape=oshape)
   
   def _build(self):
@@ -196,7 +200,7 @@ class PlaceholderInputNode(InputNode):
     Assigns a new tensorflow placeholder to _oslot_to_otensor[0]
     """
     output = self.build_outputs()
-#     with tf.variable_scope(self.name):
+
     self.fill_oslot_with_tensor(0, output)
     self._is_built = True
 
@@ -286,19 +290,11 @@ class NormalInputNode(InputNode):
             self.oslot_names[1] : const_sh + ss,
             self.oslot_names[2] : const_sh + list(ss*2)}
   
-  def __call__(self, *inputs):
-    """
-    Evaluate the node on a list of inputs.    
-    """
-    if inputs:
-      raise ValueError("A call an InputNode must have no arguments")
-    return self.build_outputs()
-  
-  def build_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, **inputs):
     """
     Evaluate the node on a dict of inputs.
     """
-    if islot_to_itensor is not None:
+    if inputs:
       raise ValueError("`InputNode.build_outputs` must have no arguments")
 
     loc, _ = self.build_output('loc')
@@ -447,5 +443,13 @@ class CategoricalInput(InputNode):
                       'outputname_2' : 'scale',
                       'initscale' : 2.0}
     this_node_dirs.update(dirs)
-    super(NormalInputNode, self)._update_directives(**this_node_dirs)
+    
+    super(CategoricalInput, self)._update_directives(**this_node_dirs)
+    
+  def build_outputs(self, **inputs):
+    """
+    """
+    raise NotImplementedError("")
+  
+  
   

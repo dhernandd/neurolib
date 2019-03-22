@@ -19,8 +19,10 @@ from neurolib.models.models import Model
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.trainer.gd_trainer import GDTrainer
 from neurolib.encoder.normal import NormalTriLNode
-from neurolib.encoder.evolution_sequence import NonlinearDynamicswGaussianNoise
+# from neurolib.encoder.evolution_sequence import NonlinearDynamicswGaussianNoise
 from neurolib.utils.analysis import compute_R2_from_sequences
+from neurolib.encoder.input import NormalInputNode
+from neurolib.encoder.seq_cells import NormalTriLCell
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -39,9 +41,8 @@ class DeepKalmanFilter(Model):
                ds_state_dim=None,
                batch_size=1,
                max_steps=25,
-               rnn_cell_class='basic',
+               rnn_cell_class='lstm',
                rnn_mode='fwd',
-               seq_class=NonlinearDynamicswGaussianNoise,
                is_categorical=False,
                num_labels=None,
                save_on_valid_improvement=False,
@@ -96,7 +97,7 @@ class DeepKalmanFilter(Model):
         self._is_custom_build = False
 
         self.rnn_cell_class = rnn_cell_class
-        self.seq_class = seq_class
+#         self.seq_class = seq_class
         self.rnn_mode = rnn_mode
         
         # dims
@@ -183,21 +184,40 @@ class DeepKalmanFilter(Model):
   def _update_default_directives(self,
                                  **directives):
     """
-    Update the default directives with user-provided ones.
+    Update the default directives.
+    
+    The relevant prefixes are:
+    
+    rnn : For the model's RNN
+    rec :
+    gen :
+    prrnn :
+    prrec :
+    tr : 
     """
     this_model_dirs = {}
     if self.mode == 'new':
       if self.builder is None:
-        this_model_dirs.update({'rec_loc_numlayers' : 2,
-                                'rec_loc_numnodes' : 128,
-                                'rec_loc_activations' : 'leaky_relu',
-                                'rec_loc_netgrowrate' : 1.0,
-                                'rec_shareparams' : False,
+        this_model_dirs.update({'rec_cell_loc_numlayers' : 2,
+                                'rec_cell_loc_numnodes' : 64,
+                                'rec_cell_loc_winitranges' : 1.0,
+                                'rec_cell_loc_activations' : 'softplus',
+                                'rec_cell_loc_netgrowrate' : 1.0,
+                                'rec_cell_shareparams' : False,
+                                'rec_cell_scale_numlayers' : 2,
+                                'rec_cell_scale_winitranges' : 0.5,
+                                'gen_loc_numlayers' : 2,
+                                'gen_loc_numnodes' : 64,
+                                'gen_loc_activations' : 'softplus',
+                                'gen_loc_winitranges' : 1.0,
+                                'gen_scale_numlayers' : 2,
+                                'gen_scale_numnodes' : 64,
+                                'gen_scale_activations' : 'softplus',
+                                'gen_scale_winitranges' : 0.5,
                                 'trainer' : 'gd',
-                                'genclass' : NormalTriLNode,
-                                'recclass' : NormalTriLNode})
+                                'genclass' : NormalTriLNode})
     this_model_dirs.update({'tr_optimizer' : 'adam',
-                            'tr_lr' : 5e-4})
+                            'tr_lr' : 7e-4})
     this_model_dirs.update(directives)
     super(DeepKalmanFilter, self)._update_default_directives(**this_model_dirs)
                 
@@ -210,30 +230,39 @@ class DeepKalmanFilter(Model):
     rnn_dirs = self.directives['rnn']
     gen_dirs = self.directives['gen']
     rec_dirs = self.directives['rec']
-#     model_dirs = self.directives['model']
     if builder is None:
       self.builder = builder = SequentialBuilder(scope=self._main_scope,
                                                  max_steps=self.max_steps)      
-      rnn1 = builder.addEvolutionSequence(state_sizes=self.rnn_state_dims,
-                                          num_inputs=self.num_inputs_rnn,
-                                          cell_class=self.rnn_cell_class,
-                                          name='RNN',
-                                          **rnn_dirs)
       for j, idim in enumerate(self.input_dims):
-        is1 = builder.addInputSequence([idim], name='Observation_'+str(j)) # FIX!
-        builder.addDirectedLink(is1, rnn1, islot=self.num_rnn_state_dims)
-      evs2 = builder.addEvolutionSequence(state_sizes=self.ds_state_dim,
-                                          num_inputs=2,
-                                          ev_seq_class=NonlinearDynamicswGaussianNoise,
-                                          name='Recognition',
-                                          **rec_dirs)
-      inn1 = builder.addInnerSequence(self.input_dims[:1],
-                                      node_class=NormalTriLNode,
-                                      name='Generative',
-                                      **gen_dirs)
+        is1 = builder.addInputSequence([idim],
+                                       name='Observation_'+str(j)) # FIX!
+      
+      rnn_priors = []
+      for i, rnn_dim in enumerate(self.rnn_state_dims):
+        prior = builder.addInput(rnn_dim[0],
+                                 iclass=NormalInputNode,
+                                 name='RNNPrior'+str(i))
+        rnn_priors.append(prior)
+      rnn = builder.addRNN(main_inputs=is1,
+                           state_inputs=rnn_priors,
+                           cell_class=self.rnn_cell_class,
+                           name='RNN',
+                           **rnn_dirs)                               
+      
+      prior_evs = builder.addInput(self.ds_state_dim,
+                                   iclass=NormalInputNode,
+                                   name='PriorEvs')
+      evs = builder.addNormalRNN(main_inputs=rnn,
+                                 state_inputs=prior_evs,
+                                 cell_class=NormalTriLCell,
+                                 name='Recognition',
+                                 **rec_dirs)
+      builder.addInnerSequence(self.input_dims[:1],
+                               main_inputs=evs,
+                               node_class=NormalTriLNode,
+                               name='Generative',
+                               **gen_dirs)
             
-      builder.addDirectedLink(rnn1, evs2, islot=1)
-      builder.addDirectedLink(evs2, inn1, islot=0)
     else:
       builder.scope = self._main_scope
     
@@ -256,6 +285,9 @@ class DeepKalmanFilter(Model):
     if self.save:
       self.save_otensor_names()
     
+    print("\nThe following names are available for evaluation:")
+    for name in sorted(self.otensor_names.keys()): print('\t', name)
+    
     self._is_built = True
         
   def _check_custom_build(self):
@@ -266,28 +298,28 @@ class DeepKalmanFilter(Model):
       if key not in self.builder.nodes:
         raise AttributeError("Node {} not found in custom build".format(key))
   
-  def _check_dataset_correctness(self, dataset):
+  def check_dataset_correctness(self, user_dataset):
     """
-    Check that the provided dataset is consistent with the DeepKalmanFilter names
+    Check that the provided user_dataset is consistent with the DeepKalmanFilter names
     """
     train_keys = ['train_Observation_'+str(i) for i in range(self.num_inputs)]
     valid_keys = ['valid_Observation_'+str(i) for i in range(self.num_inputs)]
     for key in train_keys + valid_keys:
-      if key not in dataset:
-        raise AttributeError("dataset must contain key `{}` ".format(key))
+      if key not in user_dataset:
+        raise AttributeError("user_dataset must contain key `{}` ".format(key))
       
-  def train(self, dataset, num_epochs=100):
-    """
-    Train the RNNClassifier model. 
-    
-    The dataset, provided by the client, should have keys:
-    """
-    self._check_dataset_correctness(dataset)
-    dataset_dict = self.prepare_datasets(dataset)
-
-    self.trainer.train(dataset_dict,
-                       num_epochs,
-                       batch_size=self.batch_size)
+#   def train(self, dataset, num_epochs=100):
+#     """
+#     Train the RNNClassifier model. 
+#     
+#     The dataset, provided by the client, should have keys:
+#     """
+#     self._check_dataset_correctness(dataset)
+#     dataset_dict = self.prepare_datasets(dataset)
+# 
+#     self.trainer.train(dataset_dict,
+#                        num_epochs,
+#                        batch_size=self.batch_size)
   
   def anal_R2(self,
               dataset,

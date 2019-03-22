@@ -21,30 +21,46 @@ from tensorflow.python.framework.tensor_shape import TensorShape  #pylint: disab
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
+
 class CustomCell(tf.nn.rnn_cell.RNNCell):
   """
-  An abstract class for custom cells to be used with sequential models.
+  An abstract class for custom cells to be used with sequential models, ex. g.
+  recurrent neural networks.
   
-  A CustomCell is defined in the neurolib as any node that takes its own output
-  as an input. Subclasses of CustomCell are expected to define the methods
+  Like an ANode, a CustomCell defines a transformation on a set of inputs. As
+  opposed to an ANode, a Custom Cell cannot be built directly and it does not
+  possess a _build method. Furthermore, a Custom Cell set of inputs always
+  includes at least one of its own outputs. 
+  
+  Subclasses of CustomCell are expected to define the following methods
   
   _update_directives
   declare_cell_encoder
-  _get_init_states
   __call__
   
-  and the property
+  Custom Cell inherits from tf.nn.rnn_cell.RNNCell which also expects the
+  properties
+  
+  state_size
   output_size
   """
   def __init__(self,
                builder,
                state_sizes,
                num_inputs,
-#                num_outputs,
                **dirs):
 
     """
-    Initialize the CustomCell
+    Initialize the CustomCell.
+    
+    Args:
+      builder (Builder) : The builder object for this cell. Corresponds to the
+          external builder of the cell's Custom Node
+      
+      state_sizes (int or list of ints or list of list of ints) : The dimension
+          of the cell states
+      
+      num_inputs (int) : Total number of inputs, including priors and cell inputs
     """
     super(CustomCell, self).__init__()
 
@@ -54,7 +70,6 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
 
     # inputs/outputs
     self.num_expected_inputs = num_inputs
-#     self.num_expected_outputs = num_outputs
     
     # state shapes
     self.state_sizes = self.state_sizes_to_list(state_sizes)
@@ -66,7 +81,6 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
 
     # Declare the cell encoder 
     self.encoder = self.declare_cell_encoder()
-    self.init_states = self._get_init_states()
     
     # Declare secondary outputs
     self.secondary_outputs = list(range(self.num_states, self.num_expected_outputs))
@@ -81,12 +95,6 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
   def declare_cell_encoder(self):
     """
     Declare the cell inner encoder.
-    """
-    raise NotImplementedError("")
-  
-  def _get_init_states(self):
-    """
-    Get the cell init_states
     """
     raise NotImplementedError("")
   
@@ -135,7 +143,9 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
    
   def __call__(self, inputs, state):  #pylint: disable=signature-differs
     """
-    Evaluate the cell encoder on a set of inputs    
+    Call the cell on some inputs.
+    
+    This method defers to the cell's encoder `build_outputs` method.
     """
     def make_tuple(t):
       try:
@@ -144,18 +154,12 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
         return (t,)
     
     inputs = make_tuple(inputs)
-    state = make_tuple(state)
-    print("\ncell, inputs", inputs)
-    print("cell, state", state)
-    print("cell, inputs+state", inputs+state)
+    state = make_tuple(state)    
+    enc_inputs = {'imain'+str(i) : val for i, val in enumerate(inputs + state)}
     
-    output = self.encoder(*inputs, *state)
-    print("customcell, output", output)
-    if len(output) == 1:
-      out = output[0]
-      return (out, out)
-    print("customcell; (output, output)", (output, output))
-    return (output, output)
+    output = self.encoder.build_outputs(**enc_inputs)
+    
+    return output[0], output[0]
   
   def compute_output_shape(self, input_shape):
     """
@@ -166,14 +170,16 @@ class CustomCell(tf.nn.rnn_cell.RNNCell):
 
 class BasicEncoderCell(CustomCell):
   """
-  A CustomCell with 1 inner state.
+  The most basic CustomCell  with a single inner state. It is equivalent to
+  tensorflow's basic RNN cell except that it can be highly customized through
+  its directives.
   """
   num_expected_outputs = 1
+  
   def __init__(self,
                builder,
                state_sizes,
                num_inputs=2,
-#                num_outputs=1,
                name=None,
                **dirs):
     """
@@ -186,8 +192,6 @@ class BasicEncoderCell(CustomCell):
                
         num_inputs :
 
-        num_outputs :
-  
         name :
         
         dirs :
@@ -197,7 +201,6 @@ class BasicEncoderCell(CustomCell):
     super(BasicEncoderCell, self).__init__(builder,
                                            state_sizes,
                                            num_inputs=num_inputs,
-#                                            num_outputs=num_outputs,
                                            **dirs)
 
   def _update_directives(self, **dirs):
@@ -217,32 +220,112 @@ class BasicEncoderCell(CustomCell):
     num_outputs = self.num_expected_outputs
     
     # Create the cell's Custom Encoder
-    cust = builder.createCustomNode(num_inputs, num_outputs, name="CellEnc")
+    cust = builder.createCustomCellNode(num_inputs,
+                                        num_outputs,
+                                        name="CellEnc")
     
-    cust_in1 = cust.addInner(self.state_size[0:1], num_inputs=2)
-    cust.declareIslot(islot=0, innernode_name=cust_in1, inode_islot=0)
-    cust.declareIslot(islot=1, innernode_name=cust_in1, inode_islot=1)
-
-    cust.declareOslot(oslot='main', innernode_name=cust_in1, inode_oslot='main')
+    cust_in1 = cust.addTransformInner(self.state_size[0:1],
+                                      main_inputs=[0, 1])
+    cust.declareOslot(oslot=0, innernode_name=cust_in1, inode_oslot_name='main')
         
     return cust
-
-  def _get_init_states(self):
-    """
-    Get the init states of the cell (which become the initial states of the
-    EvolutionSequence)
-    
-    The init_states are returned as a list indexed by islot.
-    """
-    init1 = self.ext_builder.addInput(self.state_dims[:1], iclass=NormalInputNode)
-    return [init1]
 
   @property
   def output_size(self):
     """
+    This controls the shape of the output of the RNN. Needs to be tuned for
+    every
     """
-    return self.state_dims
+    return self.state_dims[0][0]
 
+
+class NormalTriLCell(CustomCell):
+  """
+  A CustomCell with 1 inner state, evolved by means of a stochastic normal RNN. 
+  """
+  num_expected_outputs = 3
+  
+  def __init__(self,
+               builder,
+               state_sizes,
+               num_inputs=2,
+               name=None,
+               **dirs):
+    """
+    Initialize the NormalTriLCell.
+    """
+    self.cname = 'NormalTriLCell' if name is None else name
+
+    super(NormalTriLCell, self).__init__(builder,
+                                         state_sizes,
+                                         num_inputs=num_inputs,
+                                         **dirs)
+    
+  def _update_directives(self, **dirs):
+    """
+    Update the node directives
+    """
+    this_cell_directives = {'outputname_0' : 'main',
+                            'outputname_1' : 'loc',
+                            'outputname_2' : 'scale'}
+    this_cell_directives.update(dirs)
+    
+    super(NormalTriLCell, self)._update_directives(**this_cell_directives)
+        
+  def declare_cell_encoder(self):
+    """
+    Declare the cell inner encoder
+    """
+    builder = self.ext_builder
+    num_inputs = self.num_expected_inputs
+    num_outputs = self.num_expected_outputs
+    dirs = self.directives
+    print("NormalTriLCell; directives", dirs)
+    
+    # Create the cell's Custom Encoder
+    cust = builder.createCustomCellNode(num_inputs,
+                                        num_outputs,
+                                        name="CellEnc")
+    
+    cust_in1 = cust.addTransformInner(self.state_size[0:1],
+                                      main_inputs=[0, 1],
+                                      node_class=NormalTriLNode,
+                                      **dirs)
+    cust.declareOslot(oslot=0, innernode_name=cust_in1, inode_oslot_name='main')
+    cust.declareOslot(oslot=1, innernode_name=cust_in1, inode_oslot_name='loc')
+    cust.declareOslot(oslot=2, innernode_name=cust_in1, inode_oslot_name='scale')
+        
+    return cust
+      
+  @property
+  def output_size(self):
+    """
+    Set self.output_size
+    """
+    return (TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]),
+            TensorShape(self.state_dims[0]*2))
+  
+  def __call__(self, inputs, state):
+    """
+    Evaluate the cell encoder on a set of inputs
+    """
+    def make_tuple(t):
+      try:
+        return tuple(t)
+      except TypeError:
+        return (t,)
+    
+    inputs = make_tuple(inputs)
+    state = make_tuple(state)    
+    enc_inputs = {'imain'+str(i) : val for i, val in enumerate(inputs + state)}
+    
+    output = self.encoder.build_outputs(**enc_inputs)
+        
+#     output, _ = super(NormalTriLCell, self).__call__(inputs, state)
+    
+    return output[:], output[0]
+    
 
 class TwoEncodersCell(CustomCell):
   """
@@ -426,315 +509,3 @@ class TwoEncodersCell2(CustomCell):
     """
     return self.state_dims
 
-
-class NormalTriLCell(CustomCell):
-  """
-  A CustomCell with 1 inner state, evolved by means of a stochastic normal RNN. 
-  """
-  num_expected_outputs = 3
-  
-  def __init__(self,
-               builder,
-               state_sizes,
-               num_inputs=2,
-               name=None,
-               **dirs):
-    """
-    Initialize the NormalTriLCell.
-    """
-    self.cname = 'NormalTriLCell' if name is None else name
-
-    super(NormalTriLCell, self).__init__(builder,
-                                         state_sizes,
-                                         num_inputs=num_inputs,
-#                                          num_outputs=3,
-                                         **dirs)
-    
-  def _update_directives(self, **dirs):
-    """
-    Update the node directives
-    """
-    this_cell_directives = {'outputname_0' : 'main',
-                            'outputname_1' : 'loc',
-                            'outputname_2' : 'scale'}
-    this_cell_directives.update(dirs)
-    super(NormalTriLCell, self)._update_directives(**this_cell_directives)
-        
-  def declare_cell_encoder(self):
-    """
-    Declare the cell inner encoder
-    """
-    builder = self.ext_builder
-    num_inputs = self.num_expected_inputs
-    num_outputs = self.num_expected_outputs
-    dirs = self.directives
-    
-    cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom",
-                                    **dirs)
-    enc_name = cust.addInner(list(self.state_dims),
-                             num_inputs=num_inputs,
-                             node_class=NormalTriLNode,
-                             name='NormalTriLCell')
-    
-    cust.declareIslot(islot=0, innernode_name=enc_name, inode_islot=0)
-    cust.declareIslot(islot=1, innernode_name=enc_name, inode_islot=1)
-    cust.declareOslot(oslot='main', innernode_name=enc_name, inode_oslot='main')
-    cust.declareOslot(oslot='loc', innernode_name=enc_name, inode_oslot='loc')
-    cust.declareOslot(oslot='scale', innernode_name=enc_name, inode_oslot='scale')
-
-    return cust 
-  
-  def _get_init_states(self):
-    """
-    Get the init states of the cell (which will become the init_states of the EvolutionSequence)
-    
-    The init_states are returned as a list indexed by islot.
-    """
-    return [self.ext_builder.addInput(self.state_dims,
-                                      iclass=NormalInputNode,
-                                      **self.directives)]
-      
-  @property
-  def output_size(self):
-    """
-    Set self.output_size
-    """
-    return (TensorShape(self.state_dims[0]),
-            TensorShape(self.state_dims[0]),
-            TensorShape(self.state_dims[0]*2))
-  
-  def __call__(self, inputs, state):
-    """
-    Evaluate the cell encoder on a set of inputs
-    """
-    output, _ = super(NormalTriLCell, self).__call__(inputs, state)
-    return (output[:], output[0])
-    
-    
-# class LDSCell(CustomCell):
-#   """
-#   A CustomCell with 1 inner state, evolved by means of a stochastic Linear
-#   Dynamical System (LDS).
-#   """
-#   num_expected_outputs = 4
-#   
-#   def __init__(self,
-#                builder,
-#                state_sizes,
-#                num_inputs=1,
-#                name=None,
-#                **dirs):
-#     """
-#     Initialize the LDSCell.
-#     """
-#     self.cname = 'LDSCell' if name is None else name
-# 
-#     super(LDSCell, self).__init__(builder,
-#                                   state_sizes,
-#                                   num_inputs=num_inputs,
-# #                                   num_outputs=4,
-#                                   **dirs)
-# 
-#   def _update_directives(self, **dirs):
-#     """
-#     Update the node directives
-#     """
-#     this_cell_directives = {'outputname_0' : 'main',
-#                             'outputname_1' : 'loc',
-#                             'outputname_2' : 'A',
-#                             'outputname_3' : 'prec'}
-#     this_cell_directives.update(dirs)
-#     super(LDSCell, self)._update_directives(**this_cell_directives)
-#     
-#   def declare_cell_encoder(self):
-#     """
-#     Declare the cell inner encoder.
-#     """
-#     builder = self.ext_builder
-#     num_inputs = self.num_expected_inputs
-#     num_outputs = self.num_expected_outputs
-#     dirs = self.directives
-#     
-#     cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom",
-#                                     **dirs)
-#     enc_name = cust.addInner(list(self.state_dims),
-#                              num_inputs=num_inputs,
-#                              node_class=LDSNode,
-#                              name='LDSCell')
-#     
-#     cust.declareIslot(islot=0, innernode_name=enc_name, inode_islot=0)
-#     cust.declareOslot(oslot='main', innernode_name=enc_name, inode_oslot='main')
-#     cust.declareOslot(oslot='loc', innernode_name=enc_name, inode_oslot='loc')
-#     cust.declareOslot(oslot='prec', innernode_name=enc_name, inode_oslot='prec')
-#     cust.declareOslot(oslot='A', innernode_name=enc_name, inode_oslot='A')
-# 
-#     return cust
-#     
-#   def _get_init_states(self):
-#     """
-#     Get the init states of the cell (which are also the init states of the
-#     EvolutionSequence)
-#     
-#     The init_states are returned as a list indexed by islot.
-#     
-#     The directives to the init states should are passed to the Evolution
-#     Sequence with the prefix 'init_'. 
-#     
-#     TODO: Change this so that the prefix is 'initx_' where x is the islot or
-#     think a better way
-#     """
-#     init_dirs = {key[5:] : self.directives[key] for key in self.directives
-#                  if key.startswith('init_')}
-#     return [self.ext_builder.addInput(self.state_dims,
-#                                       iclass=NormalInputNode,
-#                                       **init_dirs)]
-#     
-#   @property
-#   def output_size(self):
-#     """
-#     Set self.output_size
-#     """
-#     return (TensorShape(self.state_dims[0]),
-#             TensorShape(self.state_dims[0]))
-# #             TensorShape(self.state_dims[0]*2),
-# #             TensorShape(self.state_dims[0]*2))
-# 
-#   def __call__(self, inputs, state):  #pylint: disable=signature-differs
-#     """
-#     Evaluate the cell encoder on a set of inputs    
-#     """
-#     def make_tuple(t):
-#       try:
-#         return tuple(t)
-#       except TypeError:
-#         return (t,)
-#     
-#     state = make_tuple(state)
-# #     output = self.encoder(*state)
-#     output = self.encoder(*state)[:2] # !! COMMENT
-# 
-#     return (output[:], output[0])
-# 
-#   def build_output(self, oslot, *inputs):
-#     """
-#     Get an oslot output tensor
-#     """
-#     return self.encoder.build_output(oslot, *inputs)
-#     
-#   
-# class LLDSCell(CustomCell):
-#   """
-#   A CustomCell with 1 inner state, evolved by means of a stochastic Linear
-#   Dynamical System (LDS).
-#   """
-#   num_expected_outputs = 5
-#   
-#   def __init__(self,
-#                builder,
-#                state_sizes,
-#                num_inputs=1,
-#                name=None,
-#                **dirs):
-#     """
-#     Initialize the LLDSCell.
-#     """
-#     self.cname = 'LLDSCell' if name is None else name
-# 
-#     super(LLDSCell, self).__init__(builder,
-#                                   state_sizes,
-#                                   num_inputs=num_inputs,
-#                                   **dirs)
-# 
-#   def _update_directives(self, **dirs):
-#     """
-#     Update the node directives
-#     """
-#     this_cell_directives = {'outputname_0' : 'main',
-#                             'outputname_1' : 'loc',
-#                             'outputname_2' : 'A',
-#                             'outputname_3' : 'prec',
-#                             'outputname_4' : 'Alinear'}
-#     this_cell_directives.update(dirs)
-#     super(LLDSCell, self)._update_directives(**this_cell_directives)
-#     
-#   def declare_cell_encoder(self):
-#     """
-#     Declare the cell inner encoder.
-#     """
-#     builder = self.ext_builder
-#     num_inputs = self.num_expected_inputs
-# #     num_outputs = self.num_expected_outputs
-#     dirs = self.directives
-#     
-#     enc_name = builder.addInner(list(self.state_dims),
-#                                 num_inputs=num_inputs,
-#                                 node_class=LDSNode,
-#                                 name='LLDSCell')
-#     enc = builder.nodes[enc_name]
-#     
-# #     cust = builder.createCustomNode(num_inputs, num_outputs, name="Custom",
-# #                                     **dirs)
-# #     enc_name = cust.addInner(list(self.state_dims),
-# #                              num_inputs=num_inputs,
-# #                              node_class=LDSNode,
-# #                              name='LDSCell')
-# #     
-# #     cust.declareIslot(islot=0, innernode_name=enc_name, inode_islot=0)
-# #     cust.declareOslot(oslot='main', innernode_name=enc_name, inode_oslot='main')
-# #     cust.declareOslot(oslot='loc', innernode_name=enc_name, inode_oslot='loc')
-# #     cust.declareOslot(oslot='prec', innernode_name=enc_name, inode_oslot='prec')
-# #     cust.declareOslot(oslot='A', innernode_name=enc_name, inode_oslot='A')
-# 
-#     return enc
-#     
-#   def _get_init_states(self):
-#     """
-#     Get the init states of the cell (which are also the init states of the
-#     EvolutionSequence)
-#     
-#     The init_states are returned as a list indexed by islot.
-#     
-#     The directives to the init states should are passed to the Evolution
-#     Sequence with the prefix 'init_'. 
-#     
-#     TODO: Change this so that the prefix is 'initx_' where x is the islot or
-#     think a better way
-#     """
-#     init_dirs = {key[5:] : self.directives[key] for key in self.directives
-#                  if key.startswith('init_')}
-#     return [self.ext_builder.addInput(self.state_dims,
-#                                       iclass=NormalInputNode,
-#                                       **init_dirs)]
-#     
-#   @property
-#   def output_size(self):
-#     """
-#     Set self.output_size
-#     """
-#     return (TensorShape(self.state_dims[0]),
-#             TensorShape(self.state_dims[0]))
-# #             TensorShape(self.state_dims[0]*2),
-# #             TensorShape(self.state_dims[0]*2))
-# 
-#   def __call__(self, inputs, state):  #pylint: disable=signature-differs
-#     """
-#     Evaluate the cell encoder on a set of inputs    
-#     """
-#     def make_tuple(t):
-#       try:
-#         return tuple(t)
-#       except TypeError:
-#         return (t,)
-#     
-#     state = make_tuple(state)
-# #     output = self.encoder(*state)
-#     output = self.encoder(*state)[:2] # !! COMMENT
-# 
-#     return (output[:], output[0])
-# 
-#   def build_output(self, oslot, *inputs):
-#     """
-#     Get an oslot output tensor
-#     """
-#     return self.encoder.build_output(oslot, *inputs)
-#     

@@ -26,7 +26,7 @@ from neurolib.encoder.input import NormalInputNode
 
 # NUM_TESTS : 3
 run_from = 0
-run_to = 3
+run_to = 0
 tests_to_run = list(range(run_from, run_to))
 
 class MergeNormalsTest(tf.test.TestCase):

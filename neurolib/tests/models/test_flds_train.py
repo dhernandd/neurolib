@@ -40,13 +40,14 @@ class fLDSTestTrain(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_train(self):
     """
     """
-    print("\nTest 1: fLDS build")
+    print("Test 0: fLDS train")
 
     dataset = {}
     Ytrain = datadict['Ytrain']

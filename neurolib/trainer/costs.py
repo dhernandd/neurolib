@@ -109,7 +109,8 @@ def elbo(node_dict, otensor_codes):
     nodeY = node_dict[otensor_codes[2]]
     Y = nodeY.get_output_tensor('main')
   
-    return tf.reduce_sum(-node_rec.entropy()) - tf.reduce_sum(node_gen.log_prob(Y))
+    return (- tf.reduce_sum(node_rec.entropy()) 
+            - tf.reduce_sum(node_gen.log_prob(Y))) 
   
 def elbo_flds(node_dict, otensor_codes):
   """

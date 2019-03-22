@@ -24,8 +24,8 @@ from neurolib.encoder.input import NormalInputNode
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-# NUM_TESTS : 6
-range_from = 2
+# NUM_TESTS : 3
+range_from = 0
 range_to = 3
 tests_to_run = list(range(range_from, range_to))
 

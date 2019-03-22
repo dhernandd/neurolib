@@ -18,7 +18,6 @@ import tensorflow as tf
 
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.encoder.input import NormalInputNode
-# from neurolib.encoder.seq_cells import LDSCell, LLDSCell
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -27,30 +26,42 @@ range_from = 0
 range_to = 3
 tests_to_run = list(range(range_from, range_to))
 
-class SequentialModelBuilderTest(tf.test.TestCase):
+class DefaultSequentialModelBuilderTest(tf.test.TestCase):
   """
+  Tests the building of Sequential models using tf native cells
   """
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
     
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_DeclareModel3(self):
     """
     """
+    print("Test 0:")
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     in1 = builder.addInputSequence(10)
     prior = builder.addInput([[3]], NormalInputNode, name='Prior')
-    builder.addRNN(main_inputs=in1,
-                   state_inputs=prior)
+    rnn_name = builder.addRNN(main_inputs=in1,
+                              state_inputs=prior)
     builder.build()
+    
+    rnn = builder.nodes[rnn_name]
+    rnn_cell = rnn.cell
+    X = tf.placeholder(tf.float64, [None, 3])
+    Y = tf.placeholder(tf.float64, [None, 10])
+    Z = rnn_cell(X, Y)
+    print("Z", Z)
+    
         
   @unittest.skipIf(1 not in tests_to_run, "Skipping")
   def test_BuildModel2(self):
     """
     """
+    print("Test 1:")
     builder = SequentialBuilder(max_steps=10, scope="Basic")
     
     in1 = builder.addInputSequence(10)
@@ -74,6 +85,7 @@ class SequentialModelBuilderTest(tf.test.TestCase):
   def test_BuildModel3(self):
     """
     """
+    print("Test 2:")
     builder = SequentialBuilder(max_steps=10,
                                 scope="Basic")
     
@@ -83,8 +95,8 @@ class SequentialModelBuilderTest(tf.test.TestCase):
     enc1 = builder.addRNN(main_inputs=in1,
                           state_inputs=[prior1, prior2],
                           cell_class='lstm')
-    enc2 = builder.addInnerSequence2([[4]],
-                                     main_inputs=enc1)
+    enc2 = builder.addInnerSequence([[4]],
+                                    main_inputs=enc1)
         
     builder.build()
     

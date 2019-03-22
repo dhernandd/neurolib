@@ -109,6 +109,18 @@ class NodeDirectives():
   
   def _process_activations(self, dirset, directives):
     """
+    Process the activations.
+    
+    The value of the key 'activations' may be a string or a list of strings. 
+    
+    If the value is a string, it must be one of the neurolib recognized
+    activations (ex: 'tanh', 'relu' etc). In this case, all activations *except
+    the one corresponding to the last layer* are set, the last one being set to
+    'None' (linear activation). In particular, if `num_layers = 1`,
+    directives['activations'] of type string will be ignored!
+    
+    If a nonlinear activation is desired with `num_layers = 1`,
+    directives['activations'] must be a list of string.
     """
     if 'activations' in directives:
       numlayers = getattr(self, dirset+'numlayers')

@@ -21,8 +21,7 @@ import tensorflow as tf
 
 from neurolib.builders.builder import Builder
 from neurolib.encoder.anode import ANode
-from neurolib.encoder.deterministic import DeterministicNNNode, DeterministicNN
-from neurolib.encoder.custom import CustomNode, CustomNode2
+from neurolib.encoder.custom import CustomInnerNode, CustomCellNode
 from neurolib.utils.utils import check_name
 
 # pylint: disable=bad-indentation, no-member, protected-access
@@ -69,7 +68,7 @@ class StaticBuilder(Builder):
     """
     Initialize the StaticBuilder
     
-    # TODO: The proper way to define a batch_size is to declare it a TensorShape
+    TODO: The proper way to define a batch_size is to declare it a TensorShape
     """
     super(StaticBuilder, self).__init__(scope, batch_size)
 
@@ -79,40 +78,13 @@ class StaticBuilder(Builder):
       self.dummy_bsz = tf.placeholder(tf.int32, [None], 'dummy_bsz')
       self.dummies['dummy_bsz'] = self.dummy_bsz.name
   
+  @check_name
   def createCustomNode(self,
-                       num_inputs,
+                       inputs,
                        num_outputs,
                        is_sequence=False,
                        name=None,
                        **dirs):
-    """
-    Create a CustomNode
-    """
-    self.add_node_to_model_graph()
-    
-    # Define here to avoid circular imports
-    custom_builder = CustomNodeBuilder(scope=name,
-                                       batch_size=self.batch_size,
-                                       dummy_bsz=self.dummy_bsz)
-    cust = CustomNode(self,
-                      custom_builder,
-                      num_inputs,
-                      num_outputs,
-                      is_sequence=is_sequence,
-                      name=name,
-                      **dirs)
-    name = cust.name
-    self.custom_encoders[name] = self.nodes[name] = cust
-    self._label_to_node[cust.label] = cust
-    
-    return cust
-  
-  def createCustomNode2(self,
-                        inputs,
-                        num_outputs,
-                        is_sequence=False,
-                        name=None,
-                        **dirs):
     """
     Create a CustomNode
     """
@@ -123,18 +95,18 @@ class StaticBuilder(Builder):
     self.add_node_to_model_graph()
     
     # Define here to avoid circular imports
-    custom_builder = CustomNodeBuilder2(scope=name,
+    custom_builder = CustomNodeBuilder(scope=name,
                                         ext_builder=self,
                                         num_inputs=num_inputs,
                                         batch_size=self.batch_size,
                                         dummy_bsz=self.dummy_bsz)
-    cust = CustomNode2(self,
-                       custom_builder,
-                       inputs,
-                       num_outputs,
-                       is_sequence=is_sequence,
-                       name=name,
-                       **dirs)
+    cust = CustomInnerNode(self,
+                           custom_builder,
+                           inputs,
+                           num_outputs,
+                           is_sequence=is_sequence,
+                           name=name,
+                           **dirs)
     name = cust.name
     self.custom_encoders[name] = self.nodes[name] = cust
     self._label_to_node[cust.label] = cust
@@ -143,7 +115,35 @@ class StaticBuilder(Builder):
     
     return cust
 
-  
+  def createCustomCellNode(self,
+                           num_inputs,
+                           num_outputs,
+                           is_sequence=False,
+                           name=None,
+                           **dirs):
+    """
+    Create a Custom Cell Encoder
+    """
+    # Define here to avoid circular imports
+    self.add_node_to_model_graph()
+    custom_builder = CustomNodeBuilder(scope=name,
+                                        ext_builder=self,
+                                        num_inputs=num_inputs,
+                                        batch_size=self.batch_size,
+                                        dummy_bsz=self.dummy_bsz)
+    cust_cell_node = CustomCellNode(self,
+                                    custom_builder,
+                                    num_inputs,
+                                    num_outputs,
+                                    is_sequence=is_sequence,
+                                    name=name,
+                                    **dirs)
+    name = cust_cell_node.name
+    self.custom_encoders[name] = self.nodes[name] = cust_cell_node
+    self._label_to_node[cust_cell_node.label] = cust_cell_node
+    
+    return cust_cell_node
+    
   def build(self,
              scope_suffix=None):
     """
@@ -206,7 +206,6 @@ class StaticBuilder(Builder):
       batch_size = list(feed_dict.values())[0].shape[0]
     dummy_feed = self.make_dummy_fd(batch_size)
     feed_dict.update(dummy_feed)
-#     print("feed_dict", feed_dict)
 
     if lmbda is not None:
       rslt = sess.run(lmbda(otensor), feed_dict=feed_dict)
@@ -231,7 +230,6 @@ class StaticBuilder(Builder):
     for tname in feed_dict:
       tensor = tf.get_default_graph().get_tensor_by_name(tname)
       tfshape, arshape = tensor.shape, feed_dict[tname].shape
-#       print("tfshape, arshape", tfshape, arshape, tfshape.is_compatible_with(arshape))
       if tfshape.is_compatible_with(arshape):
         continue
       elif are_shapes_pseudocompatible(tfshape, arshape):
@@ -265,7 +263,7 @@ class StaticBuilder(Builder):
                      lmbda=lmbda)
   
   
-class CustomNodeBuilder2(StaticBuilder):
+class CustomNodeBuilder(StaticBuilder):
   """
   A builder for building CustomNodes
   """
@@ -278,7 +276,7 @@ class CustomNodeBuilder2(StaticBuilder):
     """
     Initialize the CustomNodeBuilder
     """
-    super(CustomNodeBuilder2, self).__init__(scope,
+    super(CustomNodeBuilder, self).__init__(scope,
                                              batch_size)
     
     # dummies
@@ -296,79 +294,13 @@ class CustomNodeBuilder2(StaticBuilder):
     self._innernode_to_its_avlble_oslots = {}
     self._islot_to_inner_node_islot = defaultdict(list)
     self._oslot_to_inner_node_oslot = bidict()
+    self.have_external_inputs = {}
     
-    # new
+    # inputs
     self.num_inputs = num_inputs
     self.islot_to_innernode_names = [[] for _ in range(num_inputs)]
     
-    ##
     self.ext_builder = ext_builder
-    
-#   @check_name
-#   def addTransformInner(self, 
-#                         state_size,
-#                         main_inputs, 
-#                         lmbda=None,
-#                         node_class=DeterministicNN, 
-#                         name=None, 
-#                         name_prefix=None,
-#                         **dirs):
-#     """
-#     """
-#     return StaticBuilder.addTransformInner(self,
-#                                            state_size,
-#                                            main_inputs,
-#                                            lmbda=lmbda,
-#                                            node_class=node_class,
-#                                            name=name,
-#                                            name_prefix=name_prefix,
-#                                            **dirs)
-
-  @check_name
-  def addInner(self,
-               state_sizes,
-               num_inputs=1,
-               node_class=DeterministicNNNode,
-               is_sequence=False,
-               name=None,
-               **dirs):
-    """
-    Add an InnerNode to the Encoder Graph
-    
-    Args:
-      state_sizes (int or list of list of int) : For a single output, the
-          dimension of the output. For more than one output, a list of list of
-          ints where `state_sizes[ot]` are the dimensions of the output
-          corresponding to the oslot `ot`.
-      
-      num_inputs (int) : The number of inputs to this node.
-      
-      node_class (InnerNode or str): class of the node
-      
-      is_sequence (bool) : Does this node represent a sequence?
-      
-      name (str): A unique string identifier for the node being added to the MG
-      
-      dirs (dict): A dictionary of directives for the node
-    """
-    if num_inputs < 1:
-      raise ValueError("`InnerNodes must have at least one input "
-                       "(`num_inputs = {}`".format(num_inputs))
-    
-    self.add_node_to_model_graph()
-    
-    if isinstance(node_class, str):
-      node_class = self.innernode_dict[node_class]
-    enc_node = node_class(self,
-                          state_sizes,
-                          num_inputs=num_inputs,
-                          is_sequence=is_sequence,
-                          name=name,
-                          **dirs)
-    self.input_nodes[enc_node.name] = enc_node
-    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
-      
-    return enc_node.name
 
   def addDirectedLink(self, node1, node2, islot):
     """
@@ -401,16 +333,12 @@ class CustomNodeBuilder2(StaticBuilder):
 
     # Initialize _built_parents for the child node.
     node2._built_parents[node1.label] = False
-    
-    # Remove node2 from input_nodes
-#     self.input_nodes.pop(node2.name)
-    
+        
     # cleanup
     node1.update_when_linked_as_node1()
     node2.update_when_linked_as_node2()
     
-  def build_outputs2(self,
-                     **inputs):
+  def build_outputs(self, **inputs):
     """
     Once this method is called, the CustomNode is in possession of its final
     _islot_to_itensor AND each InnerNode of the CustomNode is in possession of a
@@ -431,9 +359,9 @@ class CustomNodeBuilder2(StaticBuilder):
           cur_node = self._label_to_node[cur_node_label]
             
           # fill `cur_node._oslot_to_otensor
-#           cur_node._build()
-          if cur_inode_name in self.input_nodes:
-            cur_node.build_outputs(**inputs)
+          if cur_node.name in self.have_external_inputs:
+            this_node_inputs = self.extract_innernode_inputs(cur_node.name, **inputs)
+            cur_node.build_outputs(**this_node_inputs)
           else:
             cur_node._build()
           
@@ -455,338 +383,45 @@ class CustomNodeBuilder2(StaticBuilder):
           # fill the output of Custom fetching from inner nodes `_oslot_to_otensor` attributes 
           if cur_node.name in self.output_nodes:
             for onode_oslot in cur_node._oslot_to_otensor:
+              print("CustomNodeBuilder; onode_oslot", onode_oslot)
               if (cur_node.name, onode_oslot) in self._oslot_to_inner_node_oslot.inv: 
                 custom_node_oslot = self._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
                 result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
                     
-    # TODO: Add attribute output_names to CustomBuilder                    
-#     return tuple([result[oslot] for oslot in self.output_names])
     return result
-          
-                
-  def build_outputs(self,
-                    islot_to_itensor,
-                    output_names):
-    """
-    Build outputs for the associated Custom Node
-    
-    TODO: This function has many problems. The most glaring one is that it does
-    not behave as the regular `build_outputs` function from InnerNodes. As is is written, it cannot bu
-    """
-    print("\ncust_builder; self.input_nodes", self.input_nodes)
-    
-    result = {}
-    _input = islot_to_itensor
-    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-      # fill the inner nodes islot_to_itensors with the input 
-      for islot in self._islot_to_inner_node_islot:
-        inner_node_data = self._islot_to_inner_node_islot[islot]
-        for inode_name, inode_islot in inner_node_data:
-          print("inode_name, inode_islot", inode_name, inode_islot)
-          print("_input", _input)
-          self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
 
-      # init bfs
-      visited = [False for _ in range(self.num_nodes)]
-      queue = []
-      for cur_inode_name in self.input_nodes:
-        cur_inode_label = self.get_label_from_name(cur_inode_name)
-        queue.append(cur_inode_label)
-        while queue:
-          cur_node_label = queue.pop(0)
-          visited[cur_node_label] = True
-          cur_node = self._label_to_node[cur_node_label]
-          
-          # build current inner node
-          print("sb; cur_node._islot_to_itensor", cur_node.name, cur_node._islot_to_itensor)
-          cur_node._build()
-          print("sb; cur_node._oslot_to_otensor", cur_node.name, cur_node._oslot_to_otensor)
-          
-          # fetch children 
-          for child_label in self.adj_list[cur_node_label]:
-            # mark current node as visited for its children
-            child_node = self._label_to_node[child_label]
-            child_node._built_parents[cur_node_label] = True
+  def extract_innernode_inputs(self, iname, **inputs):
+    """
+    From a Custom Node inputs dictionary, extract the inputs corresponding to
+    the InputNode iname.
+    
+    Expects an inputs dictionary with keys 'in0_suffix', 'in1_suffix' where the
+    number is the islot index (set by the order in which the inputs to the
+    Custom Node have been declared). The following suffix should match the
+    expectations of the InnerNode
+    """
+    inode_inputs = {}
+    if not inputs:
+      return inode_inputs
+    for islot, node_list in enumerate(self.islot_to_innernode_names): # loop over the Custom Node islots
+      if iname in node_list and 'imain' + str(islot) in inputs: # if this islot points to the iname 
+        inode_inputs['icust'+str(islot)] = inputs['imain'+str(islot)] # and append them to the **inputs tensor of the iname
             
-            # fill child `_islot_to_itensor` attribute
-            for oslot, islot in cur_node._child_label_to_slot_pairs[child_label]:
-              child_node._islot_to_itensor[islot][oslot] = cur_node.get_output_tensor(oslot)
-
-            # if all its parents are built, add to bfs queue
-            if all(child_node._built_parents.values()):
-              queue.append(child_node.label)
-          
-          # fill result with the inner node `_oslot_to_otensor` attribute 
-          if cur_node.name in self.output_nodes:
-            for onode_oslot in cur_node._oslot_to_otensor:
-              if (cur_node.name, onode_oslot) in self._oslot_to_inner_node_oslot.inv: 
-                custom_node_oslot = self._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
-                result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
-                    
-    return tuple([result[oslot] for oslot in output_names])
-  
+    return inode_inputs
+    
   def add_directed_links(self, inputs, node, start_islot=0):
     """
     """
     for i, _input in enumerate(inputs, start_islot):
       if isinstance(_input, int):
-#         inode = self.ext_builder[inode_name]
-#         self.declareIslot(_input, node)
         self.declareIslot(_input, node.name)
       else:
         self.addDirectedLink(_input, node, i)
 
-#   def declareIslot(self, islot, innernode_name, inode_islot):
   def declareIslot(self, islot, innernode_name):
     """
     Declare an inner islot as an input to the CustomNode
     """
-#     in_builder = self.in_builder
-#     self._islot_to_inner_node_islot[islot].append((innernode_name, inode_islot)) 
     self.islot_to_innernode_names[islot].append(innernode_name) 
     
     
-class CustomNodeBuilder(StaticBuilder):
-  """
-  A builder for building CustomNodes
-  """
-  def __init__(self,
-               scope,
-               batch_size=None,
-               dummy_bsz=None):
-    """
-    Initialize the CustomNodeBuilder
-    """
-    super(CustomNodeBuilder, self).__init__(scope,
-                                            batch_size)
-    
-    # dummies
-    self.dummies = {}
-    if dummy_bsz is None:
-      if self.batch_size is None:
-        self.dummy_bsz = tf.placeholder(tf.int32, [None], 'dummy_bsz')
-    else:
-      self.dummy_bsz = dummy_bsz
-    self.dummies['dummy_bsz'] = self.dummy_bsz.name
-    
-    # dicts for access and talking to the outer nodes
-    self.output_nodes = {}
-    self._innernode_to_its_avlble_islots = {}
-    self._innernode_to_its_avlble_oslots = {}
-    self._islot_to_inner_node_islot = defaultdict(list)
-    self._oslot_to_inner_node_oslot = bidict()
-    
-#   @check_name
-#   def addTransformInner(self, 
-#                         state_size,
-#                         main_inputs, 
-#                         lmbda=None,
-#                         node_class=DeterministicNN, 
-#                         name=None, 
-#                         name_prefix=None,
-#                         **dirs):
-#     """
-#     """
-#     return StaticBuilder.addTransformInner(self,
-#                                            state_size,
-#                                            main_inputs,
-#                                            lmbda=lmbda,
-#                                            node_class=node_class,
-#                                            name=name,
-#                                            name_prefix=name_prefix,
-#                                            **dirs)
-
-  @check_name
-  def addInner(self,
-               state_sizes,
-               num_inputs=1,
-               node_class=DeterministicNNNode,
-               is_sequence=False,
-               name=None,
-               **dirs):
-    """
-    Add an InnerNode to the Encoder Graph
-    
-    Args:
-      state_sizes (int or list of list of int) : For a single output, the
-          dimension of the output. For more than one output, a list of list of
-          ints where `state_sizes[ot]` are the dimensions of the output
-          corresponding to the oslot `ot`.
-      
-      num_inputs (int) : The number of inputs to this node.
-      
-      node_class (InnerNode or str): class of the node
-      
-      is_sequence (bool) : Does this node represent a sequence?
-      
-      name (str): A unique string identifier for the node being added to the MG
-      
-      dirs (dict): A dictionary of directives for the node
-    """
-    if num_inputs < 1:
-      raise ValueError("`InnerNodes must have at least one input "
-                       "(`num_inputs = {}`".format(num_inputs))
-    
-    self.add_node_to_model_graph()
-    
-    if isinstance(node_class, str):
-      node_class = self.innernode_dict[node_class]
-    enc_node = node_class(self,
-                          state_sizes,
-                          num_inputs=num_inputs,
-                          is_sequence=is_sequence,
-                          name=name,
-                          **dirs)
-    self.input_nodes[enc_node.name] = enc_node
-    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
-      
-    return enc_node.name
-
-  def addDirectedLink(self, node1, node2, islot):
-    """
-    Add directed links to the Model Graph
-    """
-    if isinstance(node1, str):
-      node1 = self.nodes[node1]
-    if isinstance(node2, str):
-      node2 = self.nodes[node2]
-    if not (isinstance(node1, ANode) and isinstance(node2, ANode)):
-      raise TypeError("Args node1 and node2 must be either of type `str` "
-                      "or type `ANode`")
-      
-    if islot > node2.num_expected_inputs - 1:
-      raise ValueError("`islot` {} out of range (`num_expected_inputs = {})"
-                       "".format(islot, node2.num_expected_inputs))
-    if islot not in node2.free_islots:
-      raise ValueError("`islot` {} has already been assigned.".format(islot))
-      
-    self.adj_matrix[node1.label][node2.label] = 1
-    if node2.label not in self.adj_list[node1.label]: 
-      self.adj_list[node1.label].append(node2.label)
-      
-    for oname in node1.oslot_names:
-      node1._child_label_to_slot_pairs[node2.label].append((oname, islot))
-    
-    node2.free_islots.remove(islot)
-
-    # Initialize _built_parents for the child node.
-    node2._built_parents[node1.label] = False
-    
-    # Remove node2 from input_nodes
-    self.input_nodes.pop(node2.name)
-    
-    # cleanup
-    node1.update_when_linked_as_node1()
-    node2.update_when_linked_as_node2()
-    
-  def build_outputs2(self,
-                     **inputs):
-    """
-    """
-    result = {}
-    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-      # init bfs
-      visited = [False for _ in range(self.num_nodes)]
-      queue = []
-      for cur_inode_name in self.input_nodes:
-        cur_inode_label = self.get_label_from_name(cur_inode_name)
-        queue.append(cur_inode_label)
-        while queue:
-          cur_node_label = queue.pop(0)
-          visited[cur_node_label] = True
-          cur_node = self._label_to_node[cur_node_label]
-            
-          # fill `cur_node._oslot_to_otensor
-#           cur_node._build()
-          if cur_inode_name in self.input_nodes:
-            cur_node._build_outputs(**inputs)
-          else:
-            cur_node._build()
-          
-          # fetch children 
-          for child_label in self.adj_list[cur_node_label]:
-            child_node = self._label_to_node[child_label]
-            
-            # A parent of this child has been built
-            child_node._built_parents[cur_node_label] = True
-
-            # assign cur_node output tensor to a child islot...
-            for oname, islot in cur_node._child_label_to_slot_pairs[child_label]:
-              child_node._islot_to_itensor[islot][oname] = cur_node.get_output_tensor(oname)
-            
-            # once all parents of a child have been built, add to bfs queue
-            if all(child_node._built_parents.values()):
-              queue.append(child_node.label)
-
-          # fill the output of Custom fetching from inner nodes `_oslot_to_otensor` attributes 
-          if cur_node.name in self.output_nodes:
-            for onode_oslot in cur_node._oslot_to_otensor:
-              if (cur_node.name, onode_oslot) in self._oslot_to_inner_node_oslot.inv: 
-                custom_node_oslot = self._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
-                result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
-                    
-    # TODO: Add attribute output_names to CustomBuilder                    
-    return tuple([result[oslot] for oslot in self.output_names])
-          
-                
-  def build_outputs(self,
-                    islot_to_itensor,
-                    output_names):
-    """
-    Build outputs for the associated Custom Node
-    
-    TODO: This function has many problems. The most glaring one is that it does
-    not behave as the regular `build_outputs` function from InnerNodes. As is is written, it cannot bu
-    """
-    print("\ncust_builder; self.input_nodes", self.input_nodes)
-    
-    result = {}
-    _input = islot_to_itensor
-    with tf.variable_scope(self.scope, reuse=tf.AUTO_REUSE):
-      # fill the inner nodes islot_to_itensors with the input 
-      for islot in self._islot_to_inner_node_islot:
-        inner_node_data = self._islot_to_inner_node_islot[islot]
-        for inode_name, inode_islot in inner_node_data:
-          print("inode_name, inode_islot", inode_name, inode_islot)
-          print("_input", _input)
-          self.nodes[inode_name]._islot_to_itensor[inode_islot] = _input[islot]
-
-      # init bfs
-      visited = [False for _ in range(self.num_nodes)]
-      queue = []
-      for cur_inode_name in self.input_nodes:
-        cur_inode_label = self.get_label_from_name(cur_inode_name)
-        queue.append(cur_inode_label)
-        while queue:
-          cur_node_label = queue.pop(0)
-          visited[cur_node_label] = True
-          cur_node = self._label_to_node[cur_node_label]
-          
-          # build current inner node
-          print("sb; cur_node._islot_to_itensor", cur_node.name, cur_node._islot_to_itensor)
-          cur_node._build()
-          print("sb; cur_node._oslot_to_otensor", cur_node.name, cur_node._oslot_to_otensor)
-          
-          # fetch children 
-          for child_label in self.adj_list[cur_node_label]:
-            # mark current node as visited for its children
-            child_node = self._label_to_node[child_label]
-            child_node._built_parents[cur_node_label] = True
-            
-            # fill child `_islot_to_itensor` attribute
-            for oslot, islot in cur_node._child_label_to_slot_pairs[child_label]:
-              child_node._islot_to_itensor[islot][oslot] = cur_node.get_output_tensor(oslot)
-
-            # if all its parents are built, add to bfs queue
-            if all(child_node._built_parents.values()):
-              queue.append(child_node.label)
-          
-          # fill result with the inner node `_oslot_to_otensor` attribute 
-          if cur_node.name in self.output_nodes:
-            for onode_oslot in cur_node._oslot_to_otensor:
-              if (cur_node.name, onode_oslot) in self._oslot_to_inner_node_oslot.inv: 
-                custom_node_oslot = self._oslot_to_inner_node_oslot.inv[(cur_node.name, onode_oslot)]
-                result[custom_node_oslot] = cur_node._oslot_to_otensor[onode_oslot]
-                    
-    return tuple([result[oslot] for oslot in output_names])
-

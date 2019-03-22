@@ -124,12 +124,13 @@ class GDTrainer(Trainer):
   def _define_train_op(self):
     """
     Define the train op using tensorflow standard machinery.
+    
+    TODO: Put lr inside model scope??
     """
     directives = self.directives
     cost = self.model.cost
     optimizer_class = self.opt_dict[directives['optimizer']]
     
-    # TODO: Put inside model scope??
     init_lr = self.directives['lr']
     lr = tf.get_variable('lr', dtype=tf.float32, initializer=init_lr)
     opt = optimizer_class(lr)
@@ -180,12 +181,24 @@ class GDTrainer(Trainer):
   def train(self, dataset_dict, num_epochs, batch_size=None):
     """
     Train a Model
+    
+    Args:
+        dataset_dict (dict) : dictionary of datasets ('train', 'valid'). Each of
+            these is a protofeed-dict where the data provided by the user has
+            already been assigned to the keys expected by the feed_dict argument
+            in `sess.run(...)`. Missing from the feed_dict are possible dummy
+            variables
+        
+        num_epochs (int) : 
     """
+    print("\nTraining...")
     sess = self.sess
     
     # get subdatasets
     train_dataset = dataset_dict['train']
     valid_dataset = dataset_dict['valid']
+    Ntrain = list(train_dataset.values())[0].shape[0]
+    Nvalid = list(valid_dataset.values())[0].shape[0]
     
     # get cost/summaries
     cost_name = self.model.otensor_names['cost']
@@ -193,13 +206,15 @@ class GDTrainer(Trainer):
 
     tr_batch_size = batch_size or self.batch_size or 1
     cvalid = np.inf
+    if self.save:
+      print("Saving in", self.rslts_dir)
     for ep in range(num_epochs):
       # gd update
       self.update_gd(train_dataset,
                      batch_size=tr_batch_size)
       ctrain = self.run_ops_from_batches(cost_name,
                                          train_dataset)
-      print("ep, cost: {}, {}".format(ep, ctrain))
+      print("ep, cost: {}, {}".format(ep, ctrain/Ntrain))
       
       # Add summaries
       if self.keep_logs:
@@ -207,11 +222,9 @@ class GDTrainer(Trainer):
       
       # Save on validation improvement
       if self.save:
-        new_cvalid = self.reduce_op_from_batches(sess,
-                                                 cost_name,
-                                                 valid_dataset)
+        new_cvalid = self.run_ops_from_batches(cost_name, valid_dataset)
         if new_cvalid < cvalid:
-          print('Valid. cost:', new_cvalid, '... Saving...')
+          print('Valid. cost:', new_cvalid/Nvalid, '... Saving...')
           
           cvalid = new_cvalid
           rslts_path = self.rslts_dir + self.model.main_scope
@@ -238,7 +251,7 @@ class GDTrainer(Trainer):
       
   def run_ops_from_batches(self, opnames, feed_dict,
                            reduction=None,
-                           axis=None):
+                           axis=None):  #pylint: disable=unused-argument
     """
     Run an op or a list of ops
     """
@@ -291,13 +304,9 @@ class GDTrainer(Trainer):
     if 'summaries' not in self.directives:
       return merged_summaries
 
-#     summaries_list = self.directives['summaries']
     summaries = self.directives['summaries']
     for summ in summaries:
-#       name = summ[0]
       curr_summ = tf.summary.scalar(summ, summaries[summ])
-#       curr_summ = tf.summary.scalar(name,
-#                                     self.summaries_dict[name](self.nodes, summ[1]))
       merged_summaries.append(curr_summ)
 
     return tf.summary.merge(merged_summaries)
@@ -311,6 +320,7 @@ class fLDSTrainer(GDTrainer):
     """
     Train a fLDS-class Model
     """
+    print("\nTraining...")
     model = self.model
     sess = self.sess
     
@@ -387,6 +397,7 @@ class VINDTrainer(GDTrainer):
     """
     Train a VIND-class Model
     """
+    print("\nTraining...")
     model = self.model
     sess = self.sess
     
@@ -396,9 +407,9 @@ class VINDTrainer(GDTrainer):
 
     # get cost/summaries
     cost_name = self.model.otensor_names['cost']
-    genlp_name = self.model.otensor_names['Generative:logprob']
-    lldslp_name = self.model.otensor_names['LLDS:logprob']
-    postent_name = self.model.otensor_names['Posterior:entropy']
+#     genlp_name = self.model.otensor_names['Generative:logprob']
+#     lldslp_name = self.model.otensor_names['LLDS:logprob']
+#     postent_name = self.model.otensor_names['Posterior:entropy']
     merged_summaries = self.merge_summaries()
 
     tr_batch_size = batch_size or self.batch_size or 1
@@ -440,8 +451,8 @@ class VINDTrainer(GDTrainer):
       ctrain = self.run_ops_from_batches(cost_name,
                                          train_dataset)
       print("ep, cost: {}, {}".format(ep, ctrain/Ntrain))
-      others = self.run_ops_from_batches([genlp_name, lldslp_name, postent_name],
-                                         train_dataset)
+#       others = self.run_ops_from_batches([genlp_name, lldslp_name, postent_name],
+#                                          train_dataset)
 
       # add summaries
       if self.keep_logs:

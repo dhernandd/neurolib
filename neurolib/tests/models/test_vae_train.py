@@ -39,6 +39,7 @@ class VAETestTrain(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping Test 0")

@@ -14,6 +14,7 @@
 #
 # ==============================================================================
 import os
+from neurolib.encoder.input import NormalInputNode
 path = os.path.dirname(os.path.realpath(__file__))
 import unittest
 import pickle
@@ -21,7 +22,7 @@ import pickle
 import tensorflow as tf
 
 from neurolib.encoder.seq_cells import TwoEncodersCell, NormalTriLCell,\
-  TwoEncodersCell2, LDSCell, BasicEncoderCell
+  TwoEncodersCell2, BasicEncoderCell
 from neurolib.builders.sequential_builder import SequentialBuilder
 from neurolib.models.predictor_rnn import PredictorRNN
 
@@ -29,7 +30,7 @@ from neurolib.models.predictor_rnn import PredictorRNN
 
 # NUM_TESTS : 9
 range_from = 0
-range_to = 9
+range_to = 6
 tests_to_run = list(range(range_from, range_to))
 
 with open(path + '/datadict_seq01', 'rb') as f1:
@@ -45,6 +46,7 @@ class CustomCellTrainTest(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
 
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
@@ -52,181 +54,169 @@ class CustomCellTrainTest(tf.test.TestCase):
     """
     Test build Custom Cell
     """
+    print("Test 0:")
+    state_dim = 10
     builder = SequentialBuilder(max_steps=25,
                                 scope="Main")
     is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[10]],
-                                       cell_class=BasicEncoderCell,
-                                       num_inputs=2,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')    
-    builder.addDirectedLink(is1, ev1, islot=1)
-    builder.addDirectedLink(ev1, inn2, islot=0)
+    prior = builder.addInput(state_dim,
+                             iclass=NormalInputNode,
+                             name='Prior')
+    rnn1 = builder.addRNN(main_inputs=is1,
+                          state_inputs=prior,
+                          cell_class=BasicEncoderCell,
+                          num_inputs=2,
+                          name='RNN')
     
-    PredictorRNN(builder=builder)
-    
-  @unittest.skipIf(1 not in tests_to_run, "Skipping")
-  def test_train_custom0(self):
-    """
-    Test build Custom Cell
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[10]],
-                                       cell_class=BasicEncoderCell,
-                                       num_inputs=2,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')    
-    builder.addDirectedLink(is1, ev1, islot=1)
-    builder.addDirectedLink(ev1, inn2, islot=0)
+    builder.addInnerSequence(state_sizes=[[1]],
+                             main_inputs=rnn1,
+                             name='Prediction')    
     
     rnn = PredictorRNN(builder=builder)
+    
     rnn.train(dataset, num_epochs=10)
-    
-  @unittest.skipIf(2 not in tests_to_run, "Skipping")
-  def test_build_custom1(self):
-    """
-    Test build Custom Cell
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[2],[3]],
-                                       num_inputs=3,
-                                       cell_class=TwoEncodersCell,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')    
-    builder.addDirectedLink(is1, ev1, islot=2)
-    builder.addDirectedLink(ev1, inn2, islot=0)
-    
-    PredictorRNN(builder=builder)
-    print("builder.nodes[ev1]._oslot_to_otensor", builder.nodes[ev1]._oslot_to_otensor)
-
-  @unittest.skipIf(3 not in tests_to_run, "Skipping")
-  def test_train_customz(self):
-    """
-    Test train Custom cell.
-    
-    This test tests a configuration that exemplifies neurolib's capabilities. A
-    CustomCell is defined consisting of two forward RNNs working in tandem. The
-    second RNN also takes as inputs, the outputs of the first one (See
-    TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
-    function.
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[2],[3]],
-                                       num_inputs=3,
-                                       cell_class=TwoEncodersCell,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')    
-    builder.addDirectedLink(is1, ev1, islot=2)
-    builder.addDirectedLink(ev1, inn2, islot=0)
-    
-    rnn = PredictorRNN(builder=builder)
-    rnn.train(dataset, num_epochs=10)
-
-  @unittest.skipIf(4 not in tests_to_run, "Skipping")
-  def test_build_custom2(self):
-    """
-    Test train Custom cell with forward links.
-     
-    This test tests a configuration that exemplifies neurolib's capabilities. A
-    CustomCell is defined consisting of two forward RNNs working in tandem. The
-    second RNN also takes as inputs, the outputs of the first one (See
-    TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
-    function.
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")     
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[2],[3]],
-                                       num_inputs=3,
-                                       cell_class=TwoEncodersCell2,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')    
-    builder.addDirectedLink(is1, ev1, islot=2)
-    builder.addDirectedLink(ev1, inn2, islot=0)
-    
-    PredictorRNN(builder=builder)
-
-  @unittest.skipIf(5 not in tests_to_run, "Skipping")
-  def test_train_custom2(self):
-    """
-    Test train Custom cell with forward links.
-     
-    This test tests a configuration that exemplifies neurolib's capabilities. A
-    CustomCell is defined consisting of two forward RNNs working in tandem. The
-    second RNN also takes as inputs, the outputs of the first one (See
-    TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
-    function.
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")     
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[2],[3]],
-                                       num_inputs=3,
-                                       cell_class=TwoEncodersCell2,
-                                       name='RNN')
-    inn2 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')
-    builder.addDirectedLink(is1, ev1, islot=2)
-    builder.addDirectedLink(ev1, inn2, islot=0)
-    
-    rnn = PredictorRNN(builder=builder)
-    rnn.train(dataset, num_epochs=10)
-
-  @unittest.skipIf(6 not in tests_to_run, "Skipping")
-  def test_build_custom3(self):
-    """
-    Test train Custom NormalTriLCell
-     
-    This test tests a configuration that exemplifies neurolib's capabilities. A
-    CustomCell is defined that consists of a forward stochastic RNN.
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")     
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[3]],
-                                       num_inputs=2,
-                                       cell_class=NormalTriLCell,
-                                       name='RNN')
-    inn1 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')
-    builder.addDirectedLink(is1, ev1, islot=1)
-    builder.addDirectedLink(ev1, inn1, islot=0)
-    
-    PredictorRNN(builder=builder)
-
-  @unittest.skipIf(7 not in tests_to_run, "Skipping")
-  def test_train_custom3(self):
-    """
-    Test train Custom NormalTriLCell
-     
-    This test tests a configuration that exemplifies neurolib's capabilities. A
-    CustomCell is defined that consists of a forward stochastic RNN.
-    """
-    builder = SequentialBuilder(max_steps=25,
-                                scope="Main")     
-    is1 = builder.addInputSequence([[1]], name='Features')
-    ev1 = builder.addEvolutionSequence([[3]],
-                                       num_inputs=2,
-                                       cell_class=NormalTriLCell,
-                                       name='RNN')
-    inn1 = builder.addInnerSequence(state_sizes=[[1]],
-                                    name='Prediction')
-    builder.addDirectedLink(is1, ev1, islot=1)
-    builder.addDirectedLink(ev1, inn1, islot=0)
-    
-    rnn = PredictorRNN(builder=builder)
-    rnn.train(dataset, num_epochs=10)
+        
+#   @unittest.skipIf(2 not in tests_to_run, "Skipping")
+#   def test_build_custom1(self):
+#     """
+#     Test build Custom Cell
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[2],[3]],
+#                                        num_inputs=3,
+#                                        cell_class=TwoEncodersCell,
+#                                        name='RNN')
+#     inn2 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')    
+#     builder.addDirectedLink(is1, ev1, islot=2)
+#     builder.addDirectedLink(ev1, inn2, islot=0)
+#     
+#     PredictorRNN(builder=builder)
+#     print("builder.nodes[ev1]._oslot_to_otensor", builder.nodes[ev1]._oslot_to_otensor)
+# 
+#   @unittest.skipIf(3 not in tests_to_run, "Skipping")
+#   def test_train_customz(self):
+#     """
+#     Test train Custom cell.
+#     
+#     This test tests a configuration that exemplifies neurolib's capabilities. A
+#     CustomCell is defined consisting of two forward RNNs working in tandem. The
+#     second RNN also takes as inputs, the outputs of the first one (See
+#     TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
+#     function.
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[2],[3]],
+#                                        num_inputs=3,
+#                                        cell_class=TwoEncodersCell,
+#                                        name='RNN')
+#     inn2 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')    
+#     builder.addDirectedLink(is1, ev1, islot=2)
+#     builder.addDirectedLink(ev1, inn2, islot=0)
+#     
+#     rnn = PredictorRNN(builder=builder)
+#     rnn.train(dataset, num_epochs=10)
+# 
+#   @unittest.skipIf(4 not in tests_to_run, "Skipping")
+#   def test_build_custom2(self):
+#     """
+#     Test train Custom cell with forward links.
+#      
+#     This test tests a configuration that exemplifies neurolib's capabilities. A
+#     CustomCell is defined consisting of two forward RNNs working in tandem. The
+#     second RNN also takes as inputs, the outputs of the first one (See
+#     TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
+#     function.
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")     
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[2],[3]],
+#                                        num_inputs=3,
+#                                        cell_class=TwoEncodersCell2,
+#                                        name='RNN')
+#     inn2 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')    
+#     builder.addDirectedLink(is1, ev1, islot=2)
+#     builder.addDirectedLink(ev1, inn2, islot=0)
+#     
+#     PredictorRNN(builder=builder)
+# 
+#   @unittest.skipIf(5 not in tests_to_run, "Skipping")
+#   def test_train_custom2(self):
+#     """
+#     Test train Custom cell with forward links.
+#      
+#     This test tests a configuration that exemplifies neurolib's capabilities. A
+#     CustomCell is defined consisting of two forward RNNs working in tandem. The
+#     second RNN also takes as inputs, the outputs of the first one (See
+#     TwoEncodersCell). The outputs of these two RNNS are passed to an MSE cost
+#     function.
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")     
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[2],[3]],
+#                                        num_inputs=3,
+#                                        cell_class=TwoEncodersCell2,
+#                                        name='RNN')
+#     inn2 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')
+#     builder.addDirectedLink(is1, ev1, islot=2)
+#     builder.addDirectedLink(ev1, inn2, islot=0)
+#     
+#     rnn = PredictorRNN(builder=builder)
+#     rnn.train(dataset, num_epochs=10)
+# 
+#   @unittest.skipIf(6 not in tests_to_run, "Skipping")
+#   def test_build_custom3(self):
+#     """
+#     Test train Custom NormalTriLCell
+#      
+#     This test tests a configuration that exemplifies neurolib's capabilities. A
+#     CustomCell is defined that consists of a forward stochastic RNN.
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")     
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[3]],
+#                                        num_inputs=2,
+#                                        cell_class=NormalTriLCell,
+#                                        name='RNN')
+#     inn1 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')
+#     builder.addDirectedLink(is1, ev1, islot=1)
+#     builder.addDirectedLink(ev1, inn1, islot=0)
+#     
+#     PredictorRNN(builder=builder)
+# 
+#   @unittest.skipIf(7 not in tests_to_run, "Skipping")
+#   def test_train_custom3(self):
+#     """
+#     Test train Custom NormalTriLCell
+#      
+#     This test tests a configuration that exemplifies neurolib's capabilities. A
+#     CustomCell is defined that consists of a forward stochastic RNN.
+#     """
+#     builder = SequentialBuilder(max_steps=25,
+#                                 scope="Main")     
+#     is1 = builder.addInputSequence([[1]], name='Features')
+#     ev1 = builder.addEvolutionSequence([[3]],
+#                                        num_inputs=2,
+#                                        cell_class=NormalTriLCell,
+#                                        name='RNN')
+#     inn1 = builder.addInnerSequence(state_sizes=[[1]],
+#                                     name='Prediction')
+#     builder.addDirectedLink(is1, ev1, islot=1)
+#     builder.addDirectedLink(ev1, inn1, islot=0)
+#     
+#     rnn = PredictorRNN(builder=builder)
+#     rnn.train(dataset, num_epochs=10)
 
 
     

@@ -44,7 +44,6 @@ class NormalNode(InnerNode):
                builder,
                state_sizes,
                main_inputs,
-#                num_inputs,
                is_sequence=False,
                name_prefix=None,
                **dirs):
@@ -54,7 +53,7 @@ class NormalNode(InnerNode):
     self.state_sizes = self.state_sizes_to_list(state_sizes) # before InnerNode__init__ call
 
     # inputs
-    self.main_inputs = main_inputs
+    self.main_inputs = self.islot_to_input = main_inputs
     self.num_expected_inputs = len(main_inputs)
     
     super(NormalNode, self).__init__(builder,
@@ -78,13 +77,13 @@ class NormalNode(InnerNode):
         
   def __call__(self, *inputs):
     """
-    Evaluate the node on a list of inputs.
-    
-    Args:
-        inputs (tf.Tensor or tuple of tensors) : 
+    Call a NormalNode with user-provided inputs
     """
-    raise NotImplementedError("")
-  
+    if not inputs:
+      raise ValueError("Inputs are mandatory for the NormalPrecisionNode")
+    inputs = {'imain' + str(i) : inputs[i] for i in range(len(inputs))}
+    return self.build_outputs(**inputs)
+    
   def build_outputs(self, **inputs):
     """
     Evaluate the node on a dict of inputs.
@@ -97,22 +96,13 @@ class NormalNode(InnerNode):
     """
     raise NotImplementedError("")
     
-  @abstractmethod
   def _build(self):
     """
+    Build the NormalTriLNode
     """
-    raise NotImplementedError("")
-  
-#   def sample(self, **ipt):
-#     """
-#     """
-#     try:
-#       return self._sample(**ipt)
-#     except AttributeError:
-#       try:
-#         return ipt['dist'].sample()
-#       except KeyError:
-#         return self.dist.sample()
+    self.build_outputs()
+    
+    self._is_built = True
 
   def _sample(self, **pars):
     """
@@ -155,7 +145,6 @@ class NormalNode(InnerNode):
     return main_input
       
 
-
 class NormalTriLNode(NormalNode):
   """
   A NormalNode with input-dependent mean and variance, and the variance
@@ -167,7 +156,6 @@ class NormalTriLNode(NormalNode):
                builder,
                state_size,
                main_inputs,
-#                num_inputs=1,
                is_sequence=False,
                name=None,
                name_prefix=None,
@@ -199,7 +187,6 @@ class NormalTriLNode(NormalNode):
     super(NormalTriLNode, self).__init__(builder,
                                          state_sizes=state_size,
                                          main_inputs=main_inputs,
-#                                          num_inputs=num_inputs,
                                          is_sequence=is_sequence,
                                          name_prefix=name_prefix,
                                          **dirs)
@@ -212,12 +199,12 @@ class NormalTriLNode(NormalNode):
     Update the node directives
     """
     this_node_dirs = {'loc_numlayers' : 3,
-                      'loc_numnodes' : 128,
-                      'loc_activations' : 'leaky_relu',
+                      'loc_numnodes' : 64,
+                      'loc_activations' : 'softplus',
                       'loc_netgrowrate' : 1.0,
                       'scale_numlayers' : 3,
-                      'scale_numnodes' : 128,
-                      'scale_activations' : 'leaky_relu',
+                      'scale_numnodes' : 64,
+                      'scale_activations' : 'softplus',
                       'scale_netgrowrate' : 1.0,
                       'shareparams' : False,
                       'outputname_1' : 'loc',
@@ -238,60 +225,65 @@ class NormalTriLNode(NormalNode):
             self.oslot_names[1] : const_sh + [xdim],
             self.oslot_names[2] : const_sh + [xdim, xdim]}
   
-  def __call__(self, *inputs):
-    """
-    Call the NormalTriLNode with user-provided inputs
-    """
-    if not inputs:
-      raise ValueError("Inputs are mandatory for the NormalTriLNode")
-    inputs = {'imain' + str(i) : inputs[i] for i in range(len(inputs))}
-    return self.build_outputs(**inputs)
-    
-  def _build(self):
-    """
-    Build the NormalTriLNode
-    """
-    self.build_outputs()
-    
-    self._is_built = True
-
   def build_outputs(self, **all_user_inputs):
     """
     Get the outputs of the NormalTriLNode
     """
     print("Building all outputs, ", self.name)
     
-    self.build_output('loc', **all_user_inputs)
-    self.build_output('scale', **all_user_inputs)
-    self.build_output('main', **all_user_inputs)
+    loc = self.build_output('loc', **all_user_inputs)
+    scale = self.build_output('scale', **all_user_inputs)
+    self.build_output('main', loc=loc, scale=scale, **all_user_inputs)
       
-  def build_output(self, oname, **all_user_inputs):
+  def build_output(self, oname, **all_inputs):
     """
     Build a single output for this node
     """
     if oname == 'loc':
-      return self.build_loc(**all_user_inputs)
+      return self.build_loc(**all_inputs)
     elif oname == 'scale':
-      return self.build_scale_tril(**all_user_inputs)
+      return self.build_scale_tril(**all_inputs)
     elif oname == 'main':
-      return self.build_main(**all_user_inputs)
+      return self.build_main(**all_inputs)
     else:
       raise ValueError("`oname` {} is not an output name for "
                        "this node".format(oname))
+
+  def get_build_name(self, islot, name=None): #pylint: disable=unused-argument
+    """
+    """
+    dirs = self.directives
+    if hasattr(dirs, 'buildnames'):
+      raise NotImplementedError("")
+    else:
+      return 'imain' + str(islot) 
     
   def prepare_inputs(self, **inputs):
     """
     Prepare the inputs
     
     TODO: Use the islots directive to define main_inputs
+    
+    TODO: Use self.get_build_name everywhere
     """
     islot_to_itensor = self._islot_to_itensor
-    main_inputs = {'imain' + str(i) : islot_to_itensor[i]['main'] for i in 
-                  range(self.num_expected_inputs)}
-    if inputs:
-      print("Updating defaults,", self.name, "with", list(inputs.keys()))
-      main_inputs.update(inputs)
-
+    
+    def get_input_tensor(islot):
+      _input = self.islot_to_input[islot]
+      if isinstance(_input, int) and 'icust' + str(_input) in inputs:
+        return inputs['icust'+str(_input)]
+      elif 'imain' + str(islot) in inputs:
+        return inputs['imain'+str(islot)]
+      else:
+        try:
+          return islot_to_itensor[islot]['main']
+        except KeyError:
+          raise KeyError("Could not obtain an input tensor for islot {}"
+                         "for building this Node".format(islot))
+      
+    main_inputs = {self.get_build_name(i) : get_input_tensor(i) for i
+                   in range(self.num_expected_inputs)}
+    
     return main_inputs
   
   def build_loc(self, **inputs):
@@ -445,17 +437,26 @@ class NormalTriLNode(NormalNode):
     """
     return self.build_main_secs(**inputs)[0]
   
-  def build_main_secs(self, **inputs):
+  def build_main_secs(self, loc=None, scale=None, **inputs):
     """
-    Build main and secondary outputs
+    Build main and secondary outputs.
+    
+    Only if `inputs` is True, loc and scale may need to be recomputed. 
+    
+    If no inputs are provided then simply get the loc and scale in the oslots.
+    If `inputs` are provided, check whether either loc or scale are passed.
+    Otherwise, recompute it with the given inputs.
+    
+    TODO: Add arguments to control the distribution samples.
     """
     print("\tBuilding main, ", self.name)
     
     if inputs:
-      loc = self.build_loc(**inputs)
-      scale = self.build_scale(**inputs)
+      loc = self.build_loc(**inputs) if loc is None else loc
+      scale = self.build_scale_tril(**inputs) if scale is None else scale
       dist = MultivariateNormalTriL(loc=loc, scale_tril=scale)
       samp = dist.sample() # Add parameters here
+      self.fill_oslot_with_tensor(0, samp)
       return samp, (loc, scale)
     else:
       if not self._is_built:
@@ -472,9 +473,8 @@ class NormalTriLNode(NormalNode):
   
 class NormalPrecisionNode(NormalNode):
   """
-  An InnerNode that takes an input and outputs a sample from a normal
-  distribution - with input-dependent mean and variance - with the covariance
-  specified by its inverse.
+  A NormalNode with input-dependent mean and variance, with the variance
+  specified via its inverse.
   """
   num_expected_outputs = 3
 
@@ -482,7 +482,6 @@ class NormalPrecisionNode(NormalNode):
                builder,
                state_sizes,
                main_inputs,
-#                num_inputs=1,
                is_sequence=False,
                name=None,
                name_prefix=None,
@@ -510,7 +509,6 @@ class NormalPrecisionNode(NormalNode):
     super(NormalPrecisionNode, self).__init__(builder,
                                               state_sizes=state_sizes,
                                               main_inputs=main_inputs,
-#                                               num_inputs=num_inputs,
                                               is_sequence=is_sequence,
                                               name_prefix=name_prefix,
                                               **dirs)
@@ -549,27 +547,6 @@ class NormalPrecisionNode(NormalNode):
             self.oslot_names[1] : const_sh + [xdim],
             self.oslot_names[2] : const_sh + [xdim, xdim]}
   
-  def __call__(self, *inputs):
-    """
-    Call the NormalPrecisionNode with user-provided inputs
-    """
-    if not inputs:
-      raise ValueError("Inputs are mandatory for the NormalPrecisionNode")
-    inputs = {'imain' + str(i) : inputs[i] for i in range(len(inputs))}
-    return self.build_outputs(**inputs)
-    
-  def _build(self):
-    """
-    Build the NormalTriLNode
-    """
-    self.build_outputs()
-    
-#     self.fill_oslot_with_tensor(0, samp)
-#     self.fill_oslot_with_tensor(1, loc)
-#     self.fill_oslot_with_tensor(2, prec)
-
-    self._is_built = True
-
   def build_outputs(self, **all_user_inputs):
     """
     Get the outputs of the NormalPrecisionNode

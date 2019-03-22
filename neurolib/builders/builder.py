@@ -18,20 +18,20 @@ import numpy as np
 from neurolib.encoder.anode import ANode
 from neurolib.encoder.input import PlaceholderInputNode
 
-from neurolib.encoder.deterministic import DeterministicNNNode #@UnusedImport
 from neurolib.utils.utils import check_name
 from neurolib.encoder.deterministic import DeterministicNN
 from neurolib.encoder.merge import MergeSeqsNormalwNormalEv
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
-innernode_dict = {'deterministic' : DeterministicNNNode}
+innernode_dict = {'deterministic' : DeterministicNN}
 
 class Builder():
   """
   Abstract class for model builders
   """
-  innernode_dict = {'deterministic' : DeterministicNNNode}
+  innernode_dict = {'deterministic' : DeterministicNN}
+  
   def __init__(self,
                scope,
                batch_size=None):
@@ -76,19 +76,24 @@ class Builder():
     add_node_adj_matrix()
     add_node_adj_list()
   
-  @check_name
-  def addExternalNode(self,
-                      node,
-                      name=None):
+  def get_label_from_name(self, name):
     """
+    Get the label of a node from name
     """
-    self.add_node_to_model_graph()
+    return self.nodes[name].label
+  
+  def add_to_output_names(self, name, tensor):
+    """
+    Add a tensor to the list of names available on restore
+    """
+    self.otensor_names[name] = tensor.name
     
-    self.ext_builder[name] = node
-    self._label_to_node[self.num_labels] = node
-    self.num_labels += 1
-    
-    return name
+  def make_dummy_fd(self, batch_size):
+    """
+    Make the feed dict for the dummies (batch size, for instance) of the Model 
+    """
+    return {self.dummies[key] : np.array([batch_size], dtype=np.int32) for key 
+            in self.dummies}
   
   @check_name
   def addInput(self,
@@ -148,8 +153,7 @@ class Builder():
     self.add_node_to_model_graph()
     
     if isinstance(node_class, str):
-      node_class = self.innernode_dict[node_class]
-    print("builder, main_inputs", main_inputs)
+      node_class = innernode_dict[node_class]
     enc_node = node_class(self,
                           state_size,
                           main_inputs=main_inputs,
@@ -163,53 +167,54 @@ class Builder():
       
     return enc_node.name
     
-  @check_name
-  def addInner(self,
-               state_sizes,
-               *args,
-               num_inputs=1,
-               node_class=DeterministicNNNode,
-               is_sequence=False,
-               name=None,
-               **dirs):
-    """
-    Add an InnerNode to the Encoder Graph
-    
-    Args:
-      state_sizes (int or list of list of int) : For a single output, the
-          dimension of the output. For more than one output, a list of list of
-          ints where `state_sizes[ot]` are the dimensions of the output
-          corresponding to the oslot `ot`.
-      
-      num_inputs (int) : The number of inputs to this node.
-      
-      node_class (InnerNode or str): class of the node
-      
-      is_sequence (bool) : Does this node represent a sequence?
-      
-      name (str): A unique string identifier for the node being added to the MG
-      
-      dirs (dict): A dictionary of directives for the node
-    """
-    if num_inputs < 1:
-      raise ValueError("`InnerNodes must have at least one input "
-                       "(`num_inputs = {}`".format(num_inputs))
-    
-    self.add_node_to_model_graph()
-    
-    if isinstance(node_class, str):
-      node_class = self.innernode_dict[node_class]
-    enc_node = node_class(self,
-                          state_sizes,
-                          *args,
-                          num_inputs=num_inputs,
-                          is_sequence=is_sequence,
-                          name=name,
-                          **dirs)
-      
-    self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
-      
-    return enc_node.name
+#   @check_name
+#   def addInner(self,
+#                state_sizes,
+#                *args,
+#                num_inputs=1,
+#                node_class=DeterministicNN,
+#                is_sequence=False,
+#                name=None,
+#                **dirs):
+#     """
+#     Add an InnerNode to the Encoder Graph
+#     
+#     Args:
+#       state_sizes (int or list of list of int) : For a single output, the
+#           dimension of the output. For more than one output, a list of list of
+#           ints where `state_sizes[ot]` are the dimensions of the output
+#           corresponding to the oslot `ot`.
+#       
+#       num_inputs (int) : The number of inputs to this node.
+#       
+#       node_class (InnerNode or str): class of the node
+#       
+#       is_sequence (bool) : Does this node represent a sequence?
+#       
+#       name (str): A unique string identifier for the node being added to the MG
+#       
+#       dirs (dict): A dictionary of directives for the node
+#     """
+#     if num_inputs < 1:
+#       raise ValueError("`InnerNodes must have at least one input "
+#                        "(`num_inputs = {}`".format(num_inputs))
+#     
+#     self.add_node_to_model_graph()
+#     
+#     if isinstance(node_class, str):
+# #       node_class = self.innernode_dict[node_class]
+#       node_class = innernode_dict[node_class]
+#     enc_node = node_class(self,
+#                           state_sizes,
+#                           *args,
+#                           num_inputs=num_inputs,
+#                           is_sequence=is_sequence,
+#                           name=name,
+#                           **dirs)
+#       
+#     self.nodes[enc_node.name] = self._label_to_node[enc_node.label] = enc_node
+#       
+#     return enc_node.name
 
   def addMergeSeqwDS(self,
                      seq_inputs,
@@ -313,37 +318,9 @@ class Builder():
     for i, inode in enumerate(inputs, start_islot):
       self.addDirectedLink(inode, node, i)
   
-  def make_dummy_fd(self, batch_size):
-    """
-    Make the feed dict for the dummies (batch size, for instance) of the Model 
-    """
-    return {self.dummies[key] : np.array([batch_size], dtype=np.int32) for key 
-            in self.dummies}
-  
-  def check_graph_correctness(self):
-    """
-    Checks the graph declared so far. 
-    
-    TODO:
-    """
-    pass
-        
-  def get_custom_encoder(self, name):
-    """
-    Get a CustomNode by name
-    """
-    return self.custom_encoders[name] 
-
-  def get_label_from_name(self, name):
-    """
-    Get the label of a node from name
-    """
-    return self.nodes[name].label
-  
-  def add_to_output_names(self, name, tensor):
-    """
-    Add a tensor to the list of names available on restore
-    """
-    self.otensor_names[name] = tensor.name
-    
-  
+#   def get_custom_encoder(self, name):
+#     """
+#     Get a CustomNode by name
+#     """
+#     return self.custom_encoders[name] 
+#   

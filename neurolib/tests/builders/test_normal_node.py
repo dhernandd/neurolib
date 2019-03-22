@@ -87,7 +87,7 @@ class NormalNodeTest(tf.test.TestCase):
     builder = SequentialBuilder(max_steps=30,
                                 scope='Main')
     i1 = builder.addInputSequence([[3]])
-    es1 = builder.addInnerSequence2([[3]],
+    es1 = builder.addInnerSequence([[3]],
                                     i1,
                                     node_class=NormalPrecisionNode)
     builder.build()

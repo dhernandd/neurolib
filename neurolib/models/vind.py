@@ -216,7 +216,7 @@ class VIND(Model):
       for i, dim in enumerate(self.sec_input_dims):
         sec_iseqs.append(builder.addInputSequence([dim],
                                                   name='SecInput'+str(i)))
-      ins1 = builder.addInnerSequence2(xdim,
+      ins1 = builder.addInnerSequence(xdim,
                                        main_inputs=obs,
                                        node_class=NormalPrecisionNode,
                                        name='Recognition',
@@ -234,7 +234,7 @@ class VIND(Model):
                                   merge_class=MergeSeqsNormalwNormalEv,
                                   name='Posterior',
                                   **post_dirs)
-      builder.addInnerSequence2([[ydim]],
+      builder.addInnerSequence([[ydim]],
                                 main_inputs=m1,
                                 node_class=NormalPrecisionNode,
                                 name='Generative',

@@ -39,6 +39,7 @@ class RegressionTestTrain(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
@@ -46,13 +47,13 @@ class RegressionTestTrain(tf.test.TestCase):
     """
     Test train
     """
-    print("\nTest 0: Regression train")
+    print("Test 0: Regression train")
         
     dc = Regression(input_dim=2,
-                    output_dim=1)
-#                     save_on_valid_improvement=True) # ok!
+                    output_dim=1,
+                    save_on_valid_improvement=False) # ok!
     dc.train(dataset,
-             num_epochs=10) # train
+             num_epochs=20) # train
     
     
 if __name__ == '__main__':

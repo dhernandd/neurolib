@@ -296,7 +296,7 @@ class MergeNormals(MergeNode):
                         in range(l/2)]
     return self.build_outputs(islot_to_itensor)
   
-  def build_outputs(self, islot_to_itensor=None):
+  def build_outputs(self, islot_to_itensor=None):  #pylint: disable=arguments-differ
     """
     Get MergeNormals outputs
     """
@@ -359,8 +359,6 @@ class MergeSeqsNormalwNormalEv(InnerNode):
                seq_inputs,
                ds_inputs,
                prior_inputs,
-#                node_list=None,
-#                node_dict_tuples=None,
                name=None,
                name_prefix=None,
                **dirs):
@@ -703,17 +701,6 @@ class MergeSeqsNormalwNormalEv(InnerNode):
       inputs = self.prepare_inputs(**inputs)
       invscale = self.build_invscale(**inputs)
       invscaled = invscale[0]
-#       if 'invscaled' in inputs:
-#         invscaled = inputs['invscaled']
-#       else:
-#         try:
-#           # TODO: Make sure the inputs are providing something new, here and
-#           # everywhere else. VERY NASTY BUG!
-#           inputs = self.prepare_inputs(**inputs)
-#           invscale, _ = self.build_invscale(**inputs)
-#           invscaled = invscale[0]
-#         except:
-#           raise ValueError("Could not define `self.entropy`")
 
     NTbins = self.max_steps
     xDim = self.xdim

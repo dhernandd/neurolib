@@ -26,7 +26,7 @@ range_from = 0
 range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
-class RNNClassifierBuildTest(tf.test.TestCase):
+class RNNPredictorBuildTest(tf.test.TestCase):
   """
   TODO: Write these in terms of self.Assert...
   """  
@@ -40,7 +40,7 @@ class RNNClassifierBuildTest(tf.test.TestCase):
     """
     Test build
     """
-    print("\nTest 1: RNNClassifier build")
+    print("\nTest 1: RNNPredictor build")
     PredictorRNN(input_dims=1,
                  state_dims=3,
                  output_dims=1)

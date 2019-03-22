@@ -22,7 +22,7 @@ from neurolib.builders.static_builder import StaticBuilder
 
 # NUM_TESTS : 2
 range_from = 0
-range_to = 2
+range_to = 1
 tests_to_run = list(range(range_from, range_to))
 
 class CallEncoderTest(tf.test.TestCase):

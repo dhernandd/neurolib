@@ -132,8 +132,6 @@ class LDSEvolution(DSEvolution):
   """
   A NormalNode with constant variance whose mean is a linear transformation of
   the input.
-
-  TODO: Efficient logprob and entropy
   """
   num_expected_outputs = 5
   
@@ -142,8 +140,6 @@ class LDSEvolution(DSEvolution):
                state_sizes,
                main_inputs,
                prior_inputs,
-#                num_inputs=2,
-#                is_sequence=True,
                name=None,
                name_prefix=None,
                **dirs):
@@ -157,10 +153,8 @@ class LDSEvolution(DSEvolution):
                                        state_sizes=state_sizes,
                                        main_inputs=main_inputs,
                                        prior_inputs=prior_inputs,
-#                                     num_inputs=num_inputs,
-#                                       is_sequence=is_sequence,
-                                        name_prefix=name_prefix,
-                                      **dirs)
+                                       name_prefix=name_prefix,
+                                       **dirs)
 
     # expect distribution
     self.dist = None

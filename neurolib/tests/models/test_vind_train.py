@@ -60,9 +60,9 @@ class VINDTestTrain(tf.test.TestCase):
     vind = VIND(main_input_dim=input_dim,
                 state_dim=[[3]],
                 max_steps=max_steps,
-                save_on_valid_improvement=True)
+                save_on_valid_improvement=False)
     
-    vind.train(dataset, num_epochs=200)
+    vind.train(dataset, num_epochs=20)
     
 
 if __name__ == '__main__':

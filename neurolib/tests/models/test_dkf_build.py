@@ -32,13 +32,14 @@ class DKFTestBuild(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_init(self):
     """
     """
-    print("\nTest 0: DKF initialization")
+    print("Test 0: DKF initialization")
     DeepKalmanFilter(input_dims=[[3]],
                      rnn_state_dims=[[5]],
                      ds_state_dim=[[4]])

@@ -19,15 +19,12 @@ import os
 from abc import abstractmethod
 
 import numpy as np
-# import tensorflow as tf
 
-# from neurolib.utils.graphs import get_session
 from neurolib.utils.dataset_manip import (get_dataset_batch_size,
                                           prepare_restore_user_dataset_for_eval,
                                           merge_datasets)
 from neurolib.trainer.costs import *  #pylint: disable=wildcard-import
 from _collections import defaultdict
-from neurolib.trainer.costs import elbo_vind
 
 # pylint: disable=bad-indentation, no-member, protected-access
 
@@ -79,9 +76,10 @@ class Model(abc.ABC):
     
     Starts a tf.Session for this Model
     """
-    tf.reset_default_graph()
+#     tf.reset_default_graph()
     self.sess = tf.Session()
     
+    # Deal with the Model directives
     self.directives = {}
     self._update_default_directives(**dirs)
     self.split_model_directives()
@@ -105,6 +103,7 @@ class Model(abc.ABC):
 
   def split_model_directives(self):
     """
+    Split the model directives by prefix
     """
     dirs = self.directives
     split_directives = defaultdict(dict)
@@ -166,6 +165,7 @@ class Model(abc.ABC):
     if batch_size is None:
       bsz = dataset[key].shape[0]  #pylint: disable=undefined-loop-variable
     dset = self.add_dummies_to_dataset(dataset, bsz)
+    
     return dset
         
   def batch_iterator_from_dataset(self, dataset, shuffle=True):
@@ -282,7 +282,7 @@ class Model(abc.ABC):
   
   def run_ops_from_batches(self, opnames, feed_dict,
                            reduction=None,
-                           axis=None):
+                           axis=None):  #pylint: disable=unused-argument
     """
     Run an op
     """

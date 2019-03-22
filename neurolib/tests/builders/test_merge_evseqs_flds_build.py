@@ -25,7 +25,7 @@ from neurolib.encoder.input import NormalInputNode
 # pylint: disable=bad-indentation, no-member, protected-access
 
 # NUM_TESTS : 2
-run_from = 1
+run_from = 0
 run_to = 2
 tests_to_run = list(range(run_from, run_to))
 
@@ -50,7 +50,7 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
     n1 = builder.addInput([[xdim]],
                           NormalInputNode,
                           name='Prior')
-    ins1 = builder.addInnerSequence2([[xdim]],
+    ins1 = builder.addInnerSequence([[xdim]],
                                      main_inputs=is1,
                                      node_class=NormalPrecisionNode,
                                      name='InnSeq')
@@ -64,7 +64,7 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
                                 prior_inputs=n1,
                                 merge_class=MergeSeqsNormalwNormalEv,
                                 name='Recognition')
-    builder.addInnerSequence2([[ydim]],
+    builder.addInnerSequence([[ydim]],
                               main_inputs=m1,
                               node_class=NormalPrecisionNode,
                               name='Generative')
@@ -85,7 +85,7 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
     n1 = builder.addInput([[xdim]],
                           NormalInputNode,
                           name='Prior')
-    ins1 = builder.addInnerSequence2([[xdim]],
+    ins1 = builder.addInnerSequence([[xdim]],
                                      main_inputs=is1,
                                      node_class=NormalPrecisionNode,
                                      name='InnSeq')
@@ -99,7 +99,7 @@ class MergeSeqsNormalwNormalEvTest(tf.test.TestCase):
                                 prior_inputs=n1,
                                 merge_class=MergeSeqsNormalwNormalEv,
                                 name='Recognition')
-    builder.addInnerSequence2([[ydim]],
+    builder.addInnerSequence([[ydim]],
                               main_inputs=m1,
                               node_class=NormalPrecisionNode,
                               name='Generative')

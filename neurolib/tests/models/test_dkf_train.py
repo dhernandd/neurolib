@@ -39,13 +39,14 @@ class DKFTestTrain(tf.test.TestCase):
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
   
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
   def test_train(self):
     """
     """
-    print("\nTest 1: DKF train")
+    print("Test 0: DKF train")
 
     dataset = {}
     Ytrain = datadict['Ytrain']
@@ -56,12 +57,12 @@ class DKFTestTrain(tf.test.TestCase):
     max_steps, input_dims = Yshape[-2], Yshape[-1]
       
     dkf = DeepKalmanFilter(input_dims=[[input_dims]],
-                           rnn_state_dims=[[40]],
-                           ds_state_dim=[[4]], # logs and save implemented
+                           rnn_state_dims=[[10], [10]],
+                           ds_state_dim=[[2]], # logs and save implemented
                            max_steps=max_steps,
-                           batch_size=1)
-#                            save_on_valid_improvement=True) # OK!
-    dkf.train(dataset, num_epochs=10)
+                           batch_size=1,
+                           save_on_valid_improvement=True) # OK!
+    dkf.train(dataset, num_epochs=2)
     
 
 if __name__ == '__main__':

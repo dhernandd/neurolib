@@ -189,16 +189,10 @@ class ANode(abc.ABC):
         raise TypeError("`state_sizes` argument must be an int of a list of lists "
                         "of int")
     return state_sizes
-    
-  def _get_all_oshapes(self):
-    """
-    Declare the shapes for every output
-    """
-    raise NotImplementedError
-    
+
   def get_state_full_shapes(self):
     """
-    Deprecated!
+    Deprecated! (STILL USED BY RNN)
     
     Get the state size shapes for this ANode    
     """
@@ -210,7 +204,7 @@ class ANode(abc.ABC):
       main_oshapes = [[bsz] + sz for sz in self.state_sizes]
     
     return main_oshapes
-  
+         
   def get_state_size_ranks(self): 
     """
     Get the ranks of the states for this ANode
@@ -226,11 +220,13 @@ class ANode(abc.ABC):
     """
     return self._islot_to_shape[islot][iname]
 
-  def get_oslot_shape(self, oname):
+#   def get_oslot_shape(self, oname):
+  def get_oshape(self, oname):
     """
     Return the outgoing shape corresponding to this oname.
     """
-    return self._oslot_to_shape[oname]
+#     return self._oslot_to_shape[oname]
+    return self.oshapes[oname]
 
   def fill_oslot_with_tensor(self, oslot, tensor, name=None):
     """
@@ -270,7 +266,7 @@ class ANode(abc.ABC):
     are the outgoing tensorflow Tensors.
     
     Requires the node to be built.
-    """
+    """    
     return self._oslot_to_otensor[oname]
 
   def update_when_linked_as_node1(self):
@@ -312,11 +308,11 @@ class ANode(abc.ABC):
     tname = self.builder.otensor_names[oname]
     return tf.get_default_graph().get_tensor_by_name(tname)
   
-  def get_inode_islot(self, inode):
-    """
-    """
-    if isinstance(inode, ANode):
-      inode = inode.name
-    return self.inputs_list.index(inode)
-  
+#   def get_inode_islot(self, inode):
+#     """
+#     """
+#     if isinstance(inode, ANode):
+#       inode = inode.name
+#     return self.inputs_list.index(inode)
+#   
   

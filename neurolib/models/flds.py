@@ -209,11 +209,11 @@ class fLDS(Model):
                                NormalInputNode,
                                name='Prior',
                                **prior_dirs)
-      rec = builder.addInnerSequence2([[xdim]],
-                                      main_inputs=obs,
-                                      node_class=NormalPrecisionNode,
-                                      name='Recognition',
-                                      **rec_dirs)
+      rec = builder.addInnerSequence([[xdim]],
+                                     main_inputs=obs,
+                                     node_class=NormalPrecisionNode,
+                                     name='Recognition',
+                                     **rec_dirs)
       lds = builder.addEvolutionwPriors([[xdim]],
                                          main_inputs=state,
                                          prior_inputs=prior,
@@ -226,11 +226,11 @@ class fLDS(Model):
                                   merge_class=MergeSeqsNormalwNormalEv,
                                   name='Posterior',
                                   **post_dirs)
-      builder.addInnerSequence2([[ydim]],
-                                main_inputs=m1,
-                                node_class=NormalPrecisionNode,
-                                name='Generative',
-                                **gen_dirs)
+      builder.addInnerSequence([[ydim]],
+                               main_inputs=m1,
+                               node_class=NormalPrecisionNode,
+                               name='Generative',
+                               **gen_dirs)
     else:
       self._check_custom_build()
       builder.scope = self._main_scope

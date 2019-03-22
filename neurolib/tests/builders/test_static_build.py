@@ -28,10 +28,12 @@ tests_to_run = list(range(range_from, range_to))
 
 class StaticModelBuilderBasicTest(tf.test.TestCase):
   """
+  Test the building of static Models (no sequences)
   """
   def setUp(self):
     """
     """
+    print()
     tf.reset_default_graph()
     
   @unittest.skipIf(0 not in tests_to_run, "Skipping")
@@ -39,7 +41,7 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     """
     Test adding basic InputNode
     """
-    print("\nTest 0: Initialization")
+    print("Test 0: Initialization")
     builder = StaticBuilder(scope='Build0')
     in1_name = builder.addInput(state_size=10)
     in1 = builder.input_nodes[in1_name]
@@ -58,7 +60,7 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     """
     Test adding basic InputNode
     """
-    print("\nTest 0: Initialization")
+    print("Test 1: Simple build")
     builder = StaticBuilder(scope='Build')
     in1_name = builder.addInput(state_size=10,
                                 iclass=NormalInputNode)
@@ -84,18 +86,20 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     NOTE: The DeterministicNode belongs to the class of nodes that starts with a
     known final number of outputs.
     """
-    print("\nTest 1: Adding InnerNode")
+    print("Test 2: Adding InnerNode")
     try:
       builder = StaticBuilder(scope='Build0')
-      builder.addInput(state_size=10, name="In")
-      enc_name = builder.addInner(state_sizes=3, name="In")
+      i1 = builder.addInput(state_size=10, name="In")
+      enc_name = builder.addTransformInner(state_sizes=3,
+                                           main_inputs=i1,
+                                           name="In")
     except AttributeError:
       print("\nCAUGHT! (AttributeError exception) \n"
             "Trying to assign the same name to two nodes!")
       builder = StaticBuilder(scope='Build0')
       i1 = builder.addInput(state_size=10, name="In")
       enc_name = builder.addTransformInner(state_size=3,
-                                               main_inputs=i1)
+                                           main_inputs=i1)
 
     enc1 = builder.nodes[enc_name]
     print('\nNode keys in builder:', list(builder.nodes.keys()))
@@ -114,11 +118,11 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     """
     Test building the simplest model possible.
     """
-    print("\nTest 4: Building a Basic Model")
+    print("Test 3: Building a Basic Model")
     builder = StaticBuilder(scope="Basic")
     in_name = builder.addInput(10)
     enc_name = builder.addTransformInner(3,
-                                             main_inputs=in_name)
+                                         main_inputs=in_name)
         
     inn, enc = builder.nodes[in_name], builder.nodes[enc_name]
     builder.build()
@@ -130,26 +134,26 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
   @unittest.skipIf(4 not in tests_to_run, "Skipping")
   def test_BuildModel2(self):
     """
-    Builds a model with 2 inputs. Test ConcatNode
+    Builds a model with 2 inputs. Test concatenation
     """
-    print("\nTest 6: Building a Model with Concat")
+    print("Test 4: Building a Model with concat")
     builder = StaticBuilder("Concat")
     in1 = builder.addInput(10)
     in2 = builder.addInput(20)
     enc1 = builder.addTransformInner(3,
-                                         main_inputs=[in1, in2])
+                                     main_inputs=[in1, in2])
     
     in1, in2, enc1 = builder.nodes[in1], builder.nodes[in2], builder.nodes[enc1]
     builder.build()
     print("enc1._islot_to_itensor", enc1._islot_to_itensor)
     print("enc1._oslot_to_otensor", enc1._oslot_to_otensor)
     
-  @unittest.skipIf(5 not in tests_to_run, "Skipping")
+  @unittest.skipIf(6 not in tests_to_run, "Skipping")
   def test_BuildModel3(self):
     """
     Try to break it, the algorithm... !! Guess not mdrfkr.
     """
-    print("\nTest 7: Building a more complicated Model")
+    print("Test 7: Building a more complicated Model")
     builder = StaticBuilder("BreakIt")
     in1 = builder.addInput(10)
     in2 = builder.addInput(20)
@@ -162,7 +166,6 @@ class StaticModelBuilderBasicTest(tf.test.TestCase):
     print("enc1._islot_to_itensor", enc2._islot_to_itensor)
     print("enc1._oslot_to_otensor", enc1._oslot_to_otensor)
     print("enc1._oslot_to_otensor", enc2._oslot_to_otensor)
-
 
     
 if __name__ == "__main__":
